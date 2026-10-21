@@ -1,0 +1,53 @@
+node_modules/
+dist/
+
+# 测试打包产物（npm test 会生成，每个套件一个）
+.test-bundle.mjs
+.watch-bundle.mjs
+.search-bundle.mjs
+.mentions-bundle.mjs
+.presence-bundle.mjs
+.stays-bundle.mjs
+.save-bundle.mjs
+.format-bundle.mjs
+.canvas-bundle.mjs
+.cal-bundle.mjs
+.board-bundle.mjs
+.org-bundle.mjs
+.places-bundle.mjs
+.terms-bundle.mjs
+
+# Rust 构建产物
+src-tauri/target/
+
+# TypeScript 增量构建缓存
+*.tsbuildinfo
+
+# 本地 npm 缓存（沙箱环境需要把缓存放在工作区内）
+.npm-cache/
+
+# 编辑器临时文件（Vite 的文件监听会撞上这些，导致 EBUSY）
+.*.tmpdir/
+*.tmp
+
+# 截图（node scripts/shoot.mjs 的产物）
+.shots/
+
+# 运行日志
+*.log
+
+# 系统垃圾文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+#  你自己的小说库
+#
+#  应用默认把作品存在浏览器里；一旦你在「选择小说库文件夹」里
+#  指到了这个仓库内部（比如 data/），那些 .md / .json 就是你的
+#  正文。**它们绝不能被提交。** 下面这两条是兜底，不是许可：
+#  最稳妥的做法是让小说库整个放在仓库外面。
+# ============================================================
+data/
+小说库/

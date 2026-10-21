@@ -1,0 +1,37 @@
+[package]
+name = "novel-studio"
+version = "0.1.0"
+description = "长篇小说设定构思工作台 —— 桌面壳"
+authors = ["吾又一言"]
+edition = "2021"
+rust-version = "1.77"
+# 有两个二进制（主程序和生成图标的辅助程序），
+# 必须指明哪个是主程序，否则 tauri build 找不到入口。
+default-run = "novel-studio"
+
+[lib]
+# 桌面壳的核心逻辑放在 lib 里，方便 cargo test 直接测，
+# 不需要启动窗口、也不需要 Tauri 运行时。
+name = "novel_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 只给 make-icons 这个辅助程序用（生成应用图标）。
+# 它会被编进 release 二进制，但只占几百 KB，换来的是不依赖
+# @tauri-apps/cli 也能出图标 —— 在离线或受限环境里这很值得。
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+# 桌面工具不需要为体积做极限优化，但发布版还是要小一点
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

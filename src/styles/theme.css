@@ -1,0 +1,670 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   吾又一言 — Design Tokens
+   基调：纸与墨（参考婺需文学社的视觉语言）
+
+   六条规则，全站执行：
+     1. 纸色底 + 墨色字。不用纯黑、不用纯白。
+     2. 单一强调色：印泥朱砂 #9c3f30。只用在真正需要被看见的地方。
+     3. 全直角。一个圆角都不留 —— 半径 token 全部为 0。
+     4. 全站宋体。工具界面和正文用同一族，靠字号字重分层。
+     5. 用横线分层，不用卡片、不用阴影。
+     6. 动效只有颜色过渡和按下时 1px 位移。
+
+   和文学社官网的差别（这里是密集的编辑工具，不是落地页）：
+     纸色更深一档、墨色对比更高，否则小字号在长时间使用下伤眼。
+   ============================================================ */
+
+@theme {
+  /* ---- 纸 ---- */
+  --color-base: #e9ebe1; /* 页面底 */
+  --color-sunken: #e2e5d9; /* 下沉区（输入、代码） */
+  --color-surface: #eef0e6; /* 面板 */
+  --color-surface-2: #e6e9dd; /* 面板上的次级块 */
+  --color-surface-3: #dee2d3; /* 悬停、选中 */
+  --color-overlay: #f2f4ea; /* 浮层 */
+
+  /* ---- 墨的分级（用线分层，不靠阴影）---- */
+  --color-line: rgba(38, 34, 26, 0.18);
+  --color-line-soft: rgba(38, 34, 26, 0.09);
+  --color-line-strong: rgba(38, 34, 26, 0.34);
+
+  /* ---- 字 ---- */
+  --color-ink: #26221a; /* 标题、正文主力 */
+  --color-ink-mid: #3a352c; /* 正文 */
+  --color-ink-soft: #544e42; /* 次级信息 */
+  --color-ink-faint: #6e6a5e; /* 三级信息（仍保持可读）*/
+
+  /* ---- 唯一的强调色：印泥朱砂 ---- */
+  --color-accent: #9c3f30;
+  --color-accent-bright: #a94a39; /* 悬停 */
+  --color-accent-deep: #7d2f22; /* 按下 */
+  --color-accent-wash: rgba(156, 63, 48, 0.08);
+  /* 悬停：全站统一这一层淡朱砂。
+     原来悬停是填成墨色（近黑），那不是这套纸面语言里的颜色 ——
+     纸面上「有反应」就该是印泥红，不是黑。 */
+  --color-hover: rgba(156, 63, 48, 0.11);
+  /* 整块变色：拖动时指针压在词条夹上，整个框要一眼看得出来 */
+  --color-accent-soft: rgba(156, 63, 48, 0.17);
+
+  /* ---- 实体类型色：传统色，与朱砂同源，低饱和 ---- */
+  --color-e-character: #3d5a80; /* 群青 */
+  --color-e-location: #4a6b52; /* 苍绿 */
+  --color-e-event: #b08430; /* 缃色 */
+  --color-e-faction: #9c3f30; /* 朱砂（与强调色同源）*/
+  --color-e-item: #6b4f7a; /* 紫檀 */
+  --color-e-concept: #46707c; /* 黛青 */
+
+  /* ---- 语义状态色 ---- */
+  --color-danger: #9c3f30;
+  /* 删除模式下的悬停填充：整个方格泛一层淡红 = 「松手就删这一个」。
+     比描边显眼、又不会把方格里的字盖住。 */
+  --color-danger-wash: rgba(156, 63, 48, 0.16);
+  --color-warn: #b08430;
+  --color-ok: #4a6b52;
+
+  /* ---- 字体：全站宋体。工具界面和正文同一族，靠字号字重分层 ---- */
+  --font-ui:
+    'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun',
+    Georgia, serif;
+  --font-serif:
+    'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun',
+    Georgia, serif;
+  /* 等宽只留给 ID、字数、日期刻度 —— 这些需要对齐的数字 */
+  --font-mono:
+    'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  /* ---- 形状：圆角 ----
+     原来是一律直角（纸面上的硬边）。改成圆角之后按「东西多大」分四档，
+     全站只从这里取值，不要在别处写死 px：
+       xs —— 色块、类型圆点这类 10px 上下的小方块
+       sm —— 标签、行内小块
+       md —— 按钮、输入框
+       lg —— 面板、卡片
+       xl —— 整块浮层（搜索面板之类）
+     数值克制：这是纸面工具，再大就变成气泡了。 */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 13px;
+  --radius-xl: 18px;
+
+  /* ---- 缓动 ---- */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- 层次：纸面上不用投影，只用极淡的一圈暗边 ---- */
+  --shadow-raise: none;
+  --shadow-float: 0 6px 24px rgba(38, 34, 26, 0.14);
+}
+
+/* ============================================================
+   基础层
+   ============================================================ */
+
+* {
+  border-color: var(--color-line);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-base);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+
+/* 滚动条：细、安静、和纸面同色系 */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(38, 34, 26, 0.2);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(38, 34, 26, 0.34);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 焦点可见性：键盘用户永远看得到，鼠标用户不受干扰 */
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   排版
+   全站宋体，所以不需要负字距。中文标题加一点正字距才有书卷气。
+   ============================================================ */
+
+.t-title {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+
+.t-micro {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--color-ink-faint);
+}
+
+/* 设定正文：行高放到 2.0，长时间阅读不累 */
+.t-prose {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 2;
+  color: var(--color-ink-mid);
+}
+
+/* 数字与 ID：需要对齐的地方才用等宽 */
+.t-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+/* ============================================================
+   组件语汇
+   ============================================================ */
+
+/* --- 表面：纸面上靠描边分层，不用阴影 --- */
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+.panel-quiet {
+  background: transparent;
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-lg);
+}
+
+/* --- 按钮：三种层级，对比度都已核对 --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-md);
+  padding: 7px 13px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 主按钮：朱砂底 + 纸色字，对比度 > 7:1 */
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-bright);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* 次按钮：透明底 + 墨色描边。悬停转朱砂，不填墨 —— 填墨会变成一块黑 */
+.btn-ghost {
+  background: transparent;
+  border-color: var(--color-line-strong);
+  color: var(--color-ink);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-hover);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.btn-ghost:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* 纯文字按钮 */
+.btn-plain {
+  background: transparent;
+  color: var(--color-ink-soft);
+  padding: 6px 8px;
+}
+.btn-plain:hover:not(:disabled) {
+  color: var(--color-accent);
+}
+
+/* --- 导航标签 ---
+   单独一套，刻意不复用 .btn-ghost。
+   原因：.btn-ghost:hover 会把背景填成墨色（那是给独立按钮用的），
+   而导航项一旦选中就长期处于选中态 —— 鼠标划过就整块变黑，很刺眼。
+   这里改用「底部朱砂线」标记选中，是纸面书卷气的做法。 */
+.nav-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  padding: 10px 16px 11px;
+  font-family: var(--font-ui);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.nav-tab:hover {
+  color: var(--color-accent);
+}
+
+/* 选中：字转朱砂，底部一条 2px 朱砂线 */
+.nav-tab[aria-current='page'] {
+  color: var(--color-accent);
+}
+
+.nav-tab[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: 13px;
+  right: 13px;
+  bottom: 2px;
+  height: 2px;
+  background: var(--color-accent);
+}
+
+.nav-tab:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: -3px;
+}
+
+/* --- 工具标签（地图的平移/打点/圈区域）---
+   和 .nav-tab 同一套语言：选中 = 字转朱砂 + 底部一条 2px 朱砂线，
+   不做方框。工具是长期处于选中态的东西，方框会显得像一排按钮，
+   而朱砂线读起来像「当前这一栏」。 */
+.tool-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 5px 2px 7px;
+  margin: 0 6px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.tool-tab:hover {
+  color: var(--color-accent);
+}
+
+.tool-tab[aria-pressed='true'] {
+  color: var(--color-accent);
+}
+
+.tool-tab[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1px;
+  height: 2px;
+  background: var(--color-accent);
+}
+
+.tool-tab:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 0;
+}
+
+/* --- 设定页的卡片：悬停与「放进夹子」的底色都放这儿 ---
+   原来这两个状态是行内样式 + JS 的 onMouseEnter 改的，
+   行内样式优先级比 :hover 高，所以 CSS 里再怎么写过都盖不住。
+   搬进样式表之后顺序才有意义：拖动时的高亮必须压过悬停。 */
+.ns-card {
+  background: var(--color-surface);
+  border-color: var(--color-line);
+}
+
+.ns-card[data-folder='true'] {
+  background: var(--color-surface-2);
+}
+
+.ns-card:hover {
+  background: var(--color-hover);
+  border-color: var(--color-accent);
+}
+
+/* 放在 :hover 之后 —— 拖到夹子上的高亮不能被悬停盖掉 */
+.ns-card[data-into='true'] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+/* --- 紧凑表格：每行做成一块圆角小条 ---
+   表格本来是一排通栏的横线，和圆角语言不搭。
+   行与行之间留 3px 的缝（border-spacing），底色由单元格自己画，
+   只给首尾两格加圆角 —— 这样一行的两端是圆的，
+   而且那条缝还是「不属于任何一行」的，拖动的换位落点才落得进去。 */
+.ns-rows tr td {
+  background: var(--color-surface);
+  border: 0;
+}
+
+.ns-rows tr:hover td {
+  background: var(--color-hover);
+}
+
+.ns-rows tr[data-into='true'] td {
+  background: var(--color-accent-soft);
+}
+
+.ns-rows tr[data-drag='true'] td {
+  background: transparent;
+}
+
+.ns-rows td:first-child {
+  border-top-left-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+  padding-left: 8px;
+}
+
+.ns-rows td:last-child {
+  border-top-right-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+  padding-right: 10px;
+}
+
+/* --- 色板：十二个低饱和传统色，和连线用的是同一套 ---
+   用 grid 而不是 flex：这样「一行放几个」由宽度决定，
+   不会在窄面板里挤成两行半。 */
+.swatch-row {
+  display: grid;
+  gap: 3px;
+}
+
+.swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.swatch:hover {
+  transform: scale(1.18);
+}
+
+.swatch[aria-pressed='true'] {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 1px;
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: rgba(156, 63, 48, 0.5);
+  color: var(--color-danger);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-surface);
+}
+
+/* --- 输入：标签在上，占位符必须可读 --- */
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink-soft);
+  margin-bottom: 7px;
+  letter-spacing: 0.08em;
+}
+
+.input {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: 8px 11px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--color-ink);
+  transition: border-color 0.2s ease;
+}
+.input::placeholder {
+  color: var(--color-ink-faint);
+  opacity: 0.85;
+}
+.input:hover {
+  border-color: rgba(156, 63, 48, 0.45);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* --- 徽标 / 标签：直角纸签 --- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-sm);
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.7;
+  border: 1px solid;
+}
+
+/* --- 分离线：这是全站唯一的「分层」手段 --- */
+.hairline {
+  height: 1px;
+  background: var(--color-line-soft);
+}
+
+/* ============================================================
+   正文里的 [[双括号跳转]]
+
+   方括号淡化，名字才是链接。平时用正文的颜色 + 一条很轻的朱砂
+   底线（让你知道这里能点，但不抢眼），鼠标放上去才转成朱砂。
+   ============================================================ */
+
+.ns-cm-bracket {
+  color: var(--color-ink-faint);
+  opacity: 0.5;
+}
+
+.ns-cm-jump {
+  cursor: pointer;
+  border-bottom: 1px solid rgba(156, 63, 48, 0.38);
+  transition: color 0.15s ease, border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.ns-cm-jump:hover {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+  background: rgba(156, 63, 48, 0.09);
+}
+
+/* 指向不存在的条目：这是写作时的待办，不是错误，所以用灰虚线而不是红色。
+   点它不跳转 —— 你多半是想把那几个字改掉。 */
+.ns-cm-jump-missing {
+  color: var(--color-ink-faint);
+  border-bottom: 1px dashed var(--color-line-strong);
+  cursor: help;
+}
+
+.ns-cm-jump-missing:hover {
+  color: var(--color-ink-faint);
+  border-bottom-color: var(--color-line-strong);
+  background: transparent;
+}
+
+/* ============================================================
+   动效
+   只有状态变化，没有装饰性动画。
+   ============================================================ */
+
+@keyframes ns-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.anim-fade-up {
+  animation: ns-fade-up 0.32s ease both;
+}
+
+/* 骨架屏：形状与最终内容一致，不用转圈 */
+@keyframes ns-shimmer {
+  0% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+
+.skeleton {
+  background: var(--color-surface-3);
+  animation: ns-shimmer 1.6s var(--ease-in-out-soft) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ============================================================
+   CodeMirror 皮肤覆盖
+   库的默认皮肤是深色的，要压成纸面语汇。
+   ============================================================ */
+
+/* 这一组用 !important 是必要的，不是偷懒：
+   CodeMirror 会把自己的主题样式注入到 <head>，而且 `height` 属性
+   生成的行内样式优先级高于任何普通类选择器。实测结果是编辑器
+   收缩到内容高度（180px），外面 601px 的容器留着大片空白，
+   滚动条永远不出现。
+   这里把「撑满容器」这件事强制下来，并逐层保证高度链是确定的。 */
+.ns-editor,
+.ns-editor > div {
+  height: 100%;
+}
+.ns-editor > .cm-theme,
+.ns-editor .cm-editor {
+  height: 100% !important;
+}
+.ns-editor .cm-scroller {
+  height: 100% !important;
+  overflow-y: auto !important;
+}
+
+.ns-editor .cm-editor {
+  background: transparent;
+  color: var(--color-ink-mid);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  height: 100%;
+}
+.ns-editor .cm-editor.cm-focused {
+  outline: none;
+}
+/* 滚动容器的排版。CodeMirror 自带 overflow:auto，
+   这里只补排版，并显式写出 overflow 免得被别处覆盖 */
+.ns-editor .cm-scroller {
+  font-family: inherit;
+  line-height: 2;
+  padding: 22px 26px 120px;
+  overflow-y: auto;
+}
+.ns-editor .cm-content {
+  caret-color: var(--color-accent);
+}
+.ns-editor .cm-gutters {
+  background: transparent;
+  border: none;
+  color: var(--color-ink-faint);
+}
+.ns-editor .cm-activeLine {
+  background: rgba(38, 34, 26, 0.035);
+}
+.ns-editor .cm-activeLineGutter {
+  background: transparent;
+}
+.ns-editor .cm-selectionBackground,
+.ns-editor .cm-content ::selection {
+  background: rgba(156, 63, 48, 0.18) !important;
+}
+.ns-editor .cm-cursor {
+  border-left-color: var(--color-accent);
+  border-left-width: 2px;
+}
