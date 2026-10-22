@@ -464,7 +464,7 @@ $env:BIG_MAP=1; npm run verify:map
 
 **未完成：**
 
-- **Windows exe 能编出来，但一启动就崩。** `src-tauri/` 全部写好、`cargo test` 17 项全过、`npx tauri build` 也能产出 `novel-studio.exe`，但运行 release 版会以 `0xC0000409`（STATUS_STACK_BUFFER_OVERRUN）退出，debug 版不会。尚未定位。步骤见 [`编译成exe.md`](编译成exe.md)。
+- **桌面版启动时可能报「请求的资源在使用中」（0x800700AA）。** 已经定位：不是程序逻辑错，是 WebView2 的用户数据目录 `%LOCALAPPDATA%\com.novelstudio.desktop` 被上一次没退干净的 `msedgewebview2.exe` 占着。Tauri 在建窗口时 panic，而 release 版是 `panic = "abort"`，于是进程以 `0xC0000409` 一声不响地退出（那个"栈溢出"其实是 abort 的伪装）。现在的处置：崩溃会写一行日志到 `%LOCALAPPDATA%\com.novelstudio.desktop\crash.log` 并弹一个说人话的消息框；恢复办法是双击项目里的 **`重置界面缓存.cmd`**（或重启电脑）。**下一步要做的根治**：上次未正常退出时自动换一个界面缓存目录 + 单实例，让这件事再也不会发生。
 - **真正的 Git 版本历史（逐行 diff）。** 目前是时间戳快照（保留 60 份）。真 Git 可以在桌面版里用 Rust 的 git2 做。
 
 ---

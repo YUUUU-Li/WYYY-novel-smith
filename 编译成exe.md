@@ -59,27 +59,34 @@ npm run desktop:build
 
 ---
 
-## 五、当前的阻塞：release 版一启动就退出
+## 五、曾经的阻塞：release 版一启动就退出（已定位）
 
-**打包和编译都是成功的**，但装完之后运行 `novel-studio.exe` 会立刻退出，退出码 `-1073740791`（即 `0xC0000409`，`STATUS_STACK_BUFFER_OVERRUN`）。**debug 版不会崩**：
+**打包和编译都是成功的**，但装完之后运行 `novel-studio.exe` 会立刻退出，退出码 `-1073740791`（即 `0xC0000409`，`STATUS_STACK_BUFFER_OVERRUN`）。debug 版不会崩。
 
-```powershell
-cargo build            # debug
-cargo run              # 正常起窗口
+**已定位（2026-10-22）**：那个"栈溢出"是假的。真实情况是 Tauri 在建窗口时 panic：
+
+```
+thread 'main' panicked at tauri-2.12.0/src/app.rs:1444:
+Failed to setup app: runtime error: failed to create webview:
+WebView2 error: WindowsError(Error { code: HRESULT(0x800700AA), message: "请求的资源在使用中。" })
 ```
 
-已经排除的：
+`0x800700AA` 是 `ERROR_BUSY`：WebView2 的用户数据目录
+`%LOCALAPPDATA%\com.novelstudio.desktop` 被上一次没退干净的 `msedgewebview2.exe` 占着。
+而 release 档设了 `panic = "abort"`，panic 于是变成 `0xC0000409` —— 所以看起来像栈溢出，其实只是一个普通的 panic 被 abort 伪装了。
 
-- 不是图标缺失（`src-tauri/icons/` 六个文件都在）
-- 不是前端资源缺失（`dist/` 打进去了，浏览器版同一份 dist 跑得好好的）
-- 不是权限问题（换目录、换用户都一样）
+**验证方式**（当时用的）：把 `main.rs` 里 `windows_subsystem` 注释掉，`cargo build --release` 后直接跑，让 panic 打到控制台。
 
-下一步的怀疑方向：`main.rs` 里的 `#![windows_subsystem = "windows"]`（为了排查已经注释掉）、
-`tauri.conf.json` 的 `windows` 配置，以及 release 下的 panic 策略（`panic = "abort"` 会把
-正常的 Rust panic 变成 `0xC0000409`，所以**真实原因可能只是一个普通 panic 被吞掉了**）。
+**当时的临时恢复**：把那个目录改名/删掉即可 —— 但注意它里面可能存着"没选小说库文件夹时"的作品（`localStorage`），所以先导出再清。
 
-排查办法：先把 `Cargo.toml` 里 release 的 `panic = "abort"` 去掉、把 `windows_subsystem` 注释掉，
-再 `cargo build --release` 直接跑，让 panic 信息打到控制台。
+**现在的处置**（代码已改）：
+
+- `lib.rs` 装了 panic hook：崩溃会写一行到 `%LOCALAPPDATA%\com.novelstudio.desktop\crash.log`，并弹一个说人话的消息框（`0x800700AA` 单独给恢复步骤）。再也不会"双击了没反应"。
+- 发布版重新打开了 `windows_subsystem = "windows"`（没有控制台黑窗），因为上面的消息框替代了控制台的作用。
+- 打包目标改成只出 **nsis**：`msi` 那一步的 WiX `light.exe` 在含中文的输出路径下会失败，没必要为一个可选格式拖住整次构建。
+- 新增 **`重置界面缓存.cmd`**：结束残留的 `msedgewebview2.exe`、把用户数据目录改名备份，然后你再启动一次即可。
+
+**下一步的根治**（还没做）：启动时留一个"干净退出"标记，若上次没标记就换一个新的界面缓存目录（并清理旧的），再加**单实例**（第二次双击只是把已有窗口提到前面）。那样这个错误就再也不会出现。
 
 ---
 
