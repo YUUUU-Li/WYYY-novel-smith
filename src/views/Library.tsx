@@ -17,6 +17,7 @@ import { StorageBar } from '../components/StorageBar'
 
 export function Library() {
   const summaries = useStore((s) => s.summaries)
+  const rootName = useStore((s) => s.rootName)
   const openProject = useStore((s) => s.openProject)
   const newProject = useStore((s) => s.newProject)
   const deleteProject = useStore((s) => s.deleteProject)
@@ -167,6 +168,16 @@ export function Library() {
                       style={{ color: 'var(--color-ink-faint)' }}
                     >
                       {p.entityCount} 条 · {relTime(p.updatedAt)}
+                    </div>
+                    {/* 每部作品自己的保存位置。
+                        这句话存在的原因：上面的根目录只写了小说库名字，
+                        很容易被读成"所有作品都在同一个文件夹里"。 */}
+                    <div
+                      className="mt-0.5 truncate text-[11px]"
+                      style={{ color: 'var(--color-ink-faint)', opacity: 0.8 }}
+                      title={`${rootName ?? '小说库'} / 小说 / ${p.title}`}
+                    >
+                      位置：{rootName ?? '小说库'} / 小说 / {p.title}
                     </div>
                   </button>
 

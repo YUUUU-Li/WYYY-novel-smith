@@ -93,11 +93,11 @@ export function StorageBar() {
         <div className="min-w-0 flex-1">
           {mode === 'filesystem' ? (
             <div className="text-[11.5px]">
-              <span style={{ color: 'var(--color-ink-faint)' }}>保存在 </span>
+              <span style={{ color: 'var(--color-ink-faint)' }}>小说库根目录：</span>
               <span style={{ color: 'var(--color-accent)' }}>{rootName}</span>
               <span style={{ color: 'var(--color-ink-faint)' }}>
                 {' '}
-                · 每个条目都是单独的 Markdown 文件，可以直接用记事本打开
+                · 每部作品在这下面各自一个文件夹，条目是单独的 Markdown 文件，可以直接用记事本打开
               </span>
             </div>
           ) : (

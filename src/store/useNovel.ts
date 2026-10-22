@@ -736,6 +736,22 @@ export const useStore = create<State>((set, get) => {
       }
       if (!next) return
 
+      /* 拦住「把小说库选进某部作品里面」。
+         小说库的结构是 `<根>/小说/<作品名>/`；如果这里选中的正好是某部作品
+         自己那一层，之后新建的作品就会嵌到它里面去（`小说/战国记/小说/新作品`），
+         看起来就像"所有作品挤在同一个文件夹里"。选错一层比选错位置更难发现。 */
+      const insideNovel =
+        next instanceof FileStorage
+          ? await next.hasNovelJson().catch(() => false)
+          : next instanceof TauriStorage
+            ? /[\\/]小说[\\/]/.test(next.root)
+            : false
+      if (insideNovel) {
+        throw new Error(
+          '这一层是某一部作品自己的文件夹（里面已经有 novel.json）。请往上退一级，选「小说库」那一层。',
+        )
+      }
+
       // 把内部存储里的作品也搬过去，否则用户会以为自己的东西没了
       for (const s of await current.listProjects()) {
         const n = await current.read(s.id)

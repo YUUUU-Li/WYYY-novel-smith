@@ -227,6 +227,23 @@ export class FileStorage implements StorageAdapter {
     return handle ? handle.name : null
   }
 
+  /**
+   * 这个文件夹本身是不是「某一部作品」——根上有没有 novel.json。
+   *
+   * 为什么需要：小说库的结构是 `<根>/小说/<作品名>/`。如果用户把「小说库」
+   * 选成了某部作品自己那一层，之后新建的作品就会嵌进前一部作品里
+   * （`小说/战国记/小说/新作品`），文件看起来就像"所有作品挤在一个文件夹"。
+   * 选之前拦一下，比事后让人去搬文件好得多。
+   */
+  async hasNovelJson(): Promise<boolean> {
+    try {
+      await this.root.getFileHandle('novel.json')
+      return true
+    } catch {
+      return false
+    }
+  }
+
   /** 上一次用过文件夹的名字，用于界面提示 */
   static lastRootName(): string | null {
     return localStorage.getItem(LS_ROOT)
