@@ -28,13 +28,13 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OUT = join(HERE, '..', 'src-tauri', 'icons')
 
-/* 保护：现在的图标是用仓库里的 logo.svg（矢量）生成的。
+/* 保护：现在的图标是用仓库里的 logo.png 生成的。
    这个脚本画的是早期那版程序化图形，跑一次就会把它覆盖回去，
    而且是那种"看着图标变了却不知道为什么"的覆盖。所以只要有源图
-   就拒绝执行，让作者自己去跑 scripts/make-icons-from-svg.ps1。 */
-if (existsSync(join(HERE, '..', 'logo.svg')) || existsSync(join(HERE, '..', 'logo.png'))) {
-  console.log('图标来自 logo.svg，这个脚本会把它覆盖成旧图形，已跳过。')
-  console.log('要重新生成：powershell -File scripts/make-icons-from-svg.ps1 && npm run icons:web')
+   就拒绝执行，让作者自己去跑 scripts/make-icons-from-logo.ps1。 */
+if (existsSync(join(HERE, '..', 'logo.png'))) {
+  console.log('图标来自 logo.png，这个脚本会把它覆盖成旧图形，已跳过。')
+  console.log('要重新生成：powershell -File scripts/make-icons-from-logo.ps1 && npm run icons:web')
   process.exit(0)
 }
 

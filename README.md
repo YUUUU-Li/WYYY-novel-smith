@@ -85,21 +85,18 @@ npm run start        # 等就绪 → 开浏览器 → 起服务器
 
 ### 换成你自己的图
 
-**图标源是仓库根目录的 `logo.svg`（矢量，512×512 视框）。** 改它，然后：
+**图标源是仓库根目录的 `logo.png`。** 改它，然后：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\make-icons-from-svg.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\make-icons-from-logo.ps1
 npm run icons:web                   # 同步成 favicon
 # 把 index.html 里 favicon 链接的 ?v= 数字加一（浏览器按 URL 缓存图标）
 npm run build                       # 让 favicon 进 dist/
 ```
 
-那个脚本用 **headless Edge** 把 SVG 渲染成 1024，再从这一张派生所有尺寸（16/32/48/64/128/256/512/1024），小尺寸额外做一次对比拉伸让笔画保持实心，最后按 ICO 规范手工拼出 7 档的 `icon.ico`。
+那个脚本的做法：每一档都从原图单独渲染（不让图标经过中间尺寸反复重采样），小尺寸再做一次对比拉伸，让笔画保持实心而不是灰雾，最后按 ICO 规范手工拼出 7 档的 `icon.ico`。
 
-> **为什么必须用矢量**：上一版是从一张 305×294 的位图做的，它的主笔画在原图里只有 8px（占宽 2.8%），缩到 32px 就是 0.9px —— 低于 1.5px 清晰线，无论用什么重采样算法都只能是灰糊。矢量没有这个下限，每个尺寸都是现画的。
->
-> `logo.png` 是旧的位图源，留着做参考，已经不参与生成。
-> `npm run icons` 画的是早期那版「夜蓝 + 三行刻痕」的程序化图形，现在会检测到源图存在并直接退出，不会覆盖。
+> `npm run icons` 画的是早期那版「夜蓝 + 三行刻痕」的程序化图形，现在会检测到 `logo.png` 存在并直接退出，不会覆盖。
 
 **快捷方式不用重建。** 它存的是 `src-tauri/icons/icon.ico` 这个路径，文件内容一换，图标就跟着换。
 如果资源管理器还顽固地显示旧图标，那是 Windows 的图标缓存 —— 把快捷方式删掉重建一个，或者注销一次就干净了。
