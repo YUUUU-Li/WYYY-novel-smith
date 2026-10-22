@@ -97,6 +97,10 @@ npm run build                       # 让 favicon 进 dist/
 那个脚本的做法：每一档都从原图单独渲染（不让图标经过中间尺寸反复重采样），小尺寸再做一次对比拉伸，让笔画保持实心而不是灰雾，最后按 ICO 规范手工拼出 7 档的 `icon.ico`。
 
 > `npm run icons` 画的是早期那版「夜蓝 + 三行刻痕」的程序化图形，现在会检测到 `logo.png` 存在并直接退出，不会覆盖。
+>
+> **网页用的 favicon 是单独一份**：它来自 `logo2.jpg`（573×534，边缘比 `logo.png` 干净），
+> 由 `scripts/make-favicon.ps1` 生成到 `public/`。所以**别用 `npm run icons:web` 覆盖它** ——
+> 那个命令会把 `src-tauri/icons` 里的桌面图标复制成 favicon，正好把这份盖掉。
 
 **快捷方式不用重建。** 它存的是 `src-tauri/icons/icon.ico` 这个路径，文件内容一换，图标就跟着换。
 如果资源管理器还顽固地显示旧图标，那是 Windows 的图标缓存 —— 把快捷方式删掉重建一个，或者注销一次就干净了。
