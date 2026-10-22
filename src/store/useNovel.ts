@@ -99,7 +99,16 @@ interface State {
    * 检测到「文件被程序之外的东西改过」时挂在这里。
    * null 表示没有待处理的外部改动。
    */
-  diskChange: { at: number; summary: string } | null
+  /**
+   * 需要作者裁决的磁盘变动。
+   *
+   * `kind` 必须分开：这两种情况看着像同一件事，实际处理完全不同 ——
+   *   changed：文件真的被改过，要问「用哪一边」
+   *   missing：文件夹找不到了，那就不存在"载入磁盘版本"这回事，
+   *            该做的是重新选一次文件夹。以前两者共用一句话，
+   *            结果在最容易吓到人的那种情况下给出了三个都没用的按钮。
+   */
+  diskChange: { at: number; summary: string; kind: 'changed' | 'missing' } | null
 
   /** 落盘状态。写盘失败必须浮到界面上，不能静默吞掉 */
   saveState: SaveState
@@ -700,13 +709,15 @@ export const useStore = create<State>((set, get) => {
       const sig = await store.signatureOf(novel).catch(() => null)
 
       if (sig === null) {
-        // 文件夹被移走、改名，或者权限被浏览器收回了
+        // 文件夹被移走、改名、删掉，或者权限被浏览器收回了。
+        // 这不是"内容被改过"，不要用那套按钮去问作者。
         set({
           diskChange: {
             at: Date.now(),
+            kind: 'missing',
             summary: isTauri()
-              ? '找不到小说库文件夹了，可能被移动、改名，或者被删掉了'
-              : '找不到小说库文件夹了，可能被移动或改名，也可能是浏览器收回了授权',
+              ? '文件夹可能被移动、改名，或者被删掉了'
+              : '文件夹可能被移动或改名，也可能是浏览器收回了授权',
           },
         })
         return
@@ -737,6 +748,7 @@ export const useStore = create<State>((set, get) => {
       set({
         diskChange: {
           at: Date.now(),
+          kind: 'changed',
           summary: bits.length > 0 ? bits.join('，') : '文件内容有变化',
         },
       })

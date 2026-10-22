@@ -186,8 +186,14 @@ function DiskChangeBanner() {
   const applyDiskVersion = useStore((s) => s.applyDiskVersion)
   const keepMemoryVersion = useStore((s) => s.keepMemoryVersion)
   const dismissDiskChange = useStore((s) => s.dismissDiskChange)
+  const chooseFolder = useStore((s) => s.chooseFolder)
 
   if (!diskChange) return null
+
+  /* 两种原因的界面不该长一个样。
+     「找不到文件夹」时，磁盘上根本没有可载入的版本，
+     给「载入磁盘版本 / 保留当前版本」等于让人在两个都没用的按钮里猜。 */
+  const missing = diskChange.kind === 'missing'
 
   return (
     <div
@@ -202,7 +208,7 @@ function DiskChangeBanner() {
       <WarningCircle size={15} style={{ color: 'var(--color-warn)' }} />
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-medium">
-          小说库文件夹里的内容被程序之外的东西改过了
+          {missing ? '打不开小说库文件夹了' : '小说库文件夹里的内容被程序之外的东西改过了'}
         </div>
         <div
           className="mt-0.5 text-[11.5px] leading-relaxed"
@@ -211,30 +217,44 @@ function DiskChangeBanner() {
           {diskChange.summary}。
           <span style={{ color: 'var(--color-ink-faint)' }}>
             {' '}
-            如果你在外部编辑过那些 Markdown，选「载入磁盘版本」；如果这些改动是误操作，选「保留当前版本」。
+            {missing
+              ? '稿子还在那个文件夹里，没有被动过；重新选一次它就能接着用。选之前别关程序。'
+              : '如果你在外部编辑过那些 Markdown，选「载入磁盘版本」；如果这些改动是误操作，选「保留当前版本」。'}
           </span>
         </div>
       </div>
       <div className="flex flex-none items-center gap-1.5">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => void applyDiskVersion()}
-        >
-          载入磁盘版本
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => void keepMemoryVersion()}
-        >
-          保留当前版本
-        </button>
+        {missing ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void chooseFolder()}
+          >
+            重新选择文件夹
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void applyDiskVersion()}
+            >
+              载入磁盘版本
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => void keepMemoryVersion()}
+            >
+              保留当前版本
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="btn btn-plain"
           onClick={dismissDiskChange}
-          title="知道了。注意：下次保存仍然会覆盖磁盘上的改动"
+          title={missing ? '知道了。下次保存会失败，除非重新选一次文件夹' : '知道了。注意：下次保存仍然会覆盖磁盘上的改动'}
         >
           稍后再说
         </button>
