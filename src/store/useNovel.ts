@@ -379,6 +379,12 @@ export const useStore = create<State>((set, get) => {
     redoLabel: null,
 
     init: async () => {
+      /* 一进来永远是作品库，不自动打开任何一本。
+         以前是「打开最近更新的那本，省掉一次点击」，但那样每次启动都被
+         直接丢进正文里：既看不到自己有哪些作品，也会让人以为程序只认得
+         一本。作者的心智模型是"先看到书架，再拿一本下来"。
+         自动打开留一条理由也站不住 —— 想继续写的人，点一下卡片就行，
+         而那一刻正好能看见它的标题和进度。 */
       /* ── 桌面版先走这条路 ──
          桌面版手里有真实路径，不需要用户每次点一下授权，
          所以能直接接着上次的小说库开。这是它比浏览器版省事的地方。
@@ -390,17 +396,14 @@ export const useStore = create<State>((set, get) => {
           const summaries = await restored.listProjects().catch(() => [])
           if (summaries.length > 0) {
             setStorage(restored)
-            const first = await restored.read(summaries[0].id).catch(() => null)
-            const adopted = first ? adopt(first) : null
             set({
-              novel: adopted?.novel ?? null,
-              index: adopted?.index ?? null,
+              novel: null,
+              index: null,
               summaries,
               storageMode: 'filesystem',
               rootName: restored.rootName,
               ready: true,
             })
-            if (adopted?.migratedTerms) scheduleSave(1200)
             return
           }
         }
@@ -427,18 +430,9 @@ export const useStore = create<State>((set, get) => {
         set({ novel: null, index: null, summaries: [], ready: true })
         return
       }
-      // 有作品就打开最近更新的一本，省掉一次点击
-      const first = await store.read(summaries[0].id)
-      const adopted = first ? adopt(first) : null
-      set({
-        novel: adopted?.novel ?? null,
-        index: adopted?.index ?? null,
-        summaries,
-        ready: true,
-      })
-      // 迁移（字典 → 概念）只在第一次打开老作品时发生，顺手落一次盘，
-      // 否则每开一次都要重新迁一遍，而磁盘上永远还是旧的
-      if (adopted?.migratedTerms) scheduleSave(1200)
+      // 有作品也只列出来，不替你打开。「字典 → 概念」的迁移推迟到真正
+      // 打开某一本时再做（openProject 里会做），不会因此漏掉。
+      set({ novel: null, index: null, summaries, ready: true })
     },
 
     openProject: async (id) => {
