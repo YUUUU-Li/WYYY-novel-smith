@@ -126,10 +126,11 @@ class LocalStorageAdapter implements StorageAdapter {
     return novelToFiles(novel)
   }
 
-  /** 浏览器存储没有「外部改动」这个概念，永远返回 null */
-  async signatureOf(): Promise<string | null> {
-    return null
-  }
+  /* 刻意不实现 signatureOf。
+     内部的「有没有被外部改过」检测只对真实文件夹有意义，而调用方
+     用 `store.signatureOf` 是否存在来判断「这个后端支不支持」。
+     以前这里返回的是 null，结果被调用方读成「文件夹找不到了」，
+     于是内部存储模式下每次打开都会弹一条假告警。不实现 = 不支持。 */
 }
 
 /* ============================================================

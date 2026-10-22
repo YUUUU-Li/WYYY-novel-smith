@@ -353,10 +353,17 @@ export const useStore = create<State>((set, get) => {
           }
         }
       } else {
-        // 先看有没有上次用过的文件夹。有就提示用户点一下继续，
-        // 因为浏览器不允许在用户手势之外重新授权。
-        const lastRoot = await FileStorage.hasSaved().catch(() => null)
-        if (lastRoot) set({ pendingRoot: lastRoot })
+        /* 先把上次用过的文件夹静默接回来：如果浏览器还留着授权，
+           就直接接着用，不再让作者每开一次点一次。
+           接不回来（授权已退回 prompt）才显示那一条「继续使用」。 */
+        const silent = await FileStorage.restore().catch(() => null)
+        if (silent) {
+          setStorage(silent)
+          set({ storageMode: 'filesystem', rootName: silent.rootName })
+        } else {
+          const lastRoot = await FileStorage.hasSaved().catch(() => null)
+          if (lastRoot) set({ pendingRoot: lastRoot })
+        }
       }
 
       const store = getStorage()
@@ -659,6 +666,12 @@ export const useStore = create<State>((set, get) => {
         const n = await current.read(s.id)
         if (n) await next.write(n).catch(() => undefined)
       }
+
+      /* 最后再把内存里正在编辑的那份写进去。
+         顺序很重要：这条路径也可能是从「找不到文件夹」点过来的，
+         那时磁盘读不到内容，只有内存里才是最新的。
+         放在最后 = 内存版本不会被上面的旧副本盖掉。 */
+      if (editing) await next.write(editing).catch(() => undefined)
 
       // 桌面版把路径记下来，下次启动直接恢复，不用再选一次
       if (next instanceof TauriStorage) rememberRoot(next.root)
