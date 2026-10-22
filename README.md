@@ -464,8 +464,21 @@ $env:BIG_MAP=1; npm run verify:map
 
 **未完成：**
 
-- **桌面版启动时可能报「请求的资源在使用中」（0x800700AA）。** 已经定位：不是程序逻辑错，是 WebView2 的用户数据目录 `%LOCALAPPDATA%\com.novelstudio.desktop` 被上一次没退干净的 `msedgewebview2.exe` 占着。Tauri 在建窗口时 panic，而 release 版是 `panic = "abort"`，于是进程以 `0xC0000409` 一声不响地退出（那个"栈溢出"其实是 abort 的伪装）。现在的处置：崩溃会写一行日志到 `%LOCALAPPDATA%\com.novelstudio.desktop\crash.log` 并弹一个说人话的消息框；恢复办法是双击项目里的 **`重置界面缓存.cmd`**（或重启电脑）。**下一步要做的根治**：上次未正常退出时自动换一个界面缓存目录 + 单实例，让这件事再也不会发生。
 - **真正的 Git 版本历史（逐行 diff）。** 目前是时间戳快照（保留 60 份）。真 Git 可以在桌面版里用 Rust 的 git2 做。
+
+### 桌面版启动：踩过的坑（已修）
+
+release 版曾经一启动就以 `0xC0000409` 一声不响地退出。真相不是"栈溢出"：**WebView2 打不开它的用户数据目录**（被上一次没退干净的 `msedgewebview2.exe` 占着 → `ERROR_BUSY 0x800700AA`；没有写权限时是 `os error 5`），Tauri 建窗口失败后 panic，而 release 档是 `panic = "abort"`，abort 在 Windows 上表现成 `0xC0000409`。
+
+现在的处置（`src-tauri/src/lib.rs`）：
+
+1. **窗口改在代码里建**（`tauri.conf.json` 的 `windows` 是空的），这样才能给 WebView2 指定缓存目录。
+2. **启动先探测默认缓存目录能不能用** —— 用"改名"来判断（目录里有进程打开着文件就不许改名）。被占就自动换一个 `EBWebView-<时间戳>`，并在 `crash.log` 里记一笔；顺手清掉以前留下的临时目录。
+3. **单实例**（命名互斥体 + `FindWindowW`）：第二次双击只把已有窗口恢复到前面，不会再开第二个进程去抢同一个目录。
+4. **崩溃可见**：panic hook 写 `%LOCALAPPDATA%\com.novelstudio.desktop\crash.log` 并弹消息框。
+
+> **给以后调试的自己**：这个应用**不能在受限沙箱里启动**（比如只允许写工作区的环境）。WebView2 要往 `%LOCALAPPDATA%` 写缓存，被拦下来就会报 0x800700AA / os error 5，看起来像"程序一启动就崩"，其实是环境问题。本次就为此误判过一轮。
+
 
 ---
 
