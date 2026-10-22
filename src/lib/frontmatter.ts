@@ -6,7 +6,7 @@
    四种形状，可控。而且这层将来要挪到 Rust 侧（Tauri），
    保持格式简单能省掉一次移植风险。
    
-   关键约束：解析失败绝不能吞掉用户数据。解析不了就退回纯文本。
+   系键约束：解析失败绝不能吞掉用户数据。解析不了就退回纯文本。
    ============================================================ */
 
 import type {
@@ -225,8 +225,8 @@ function serializeDate(d: NovelDate): string {
 
 function serializeLink(l: EntityLink): string {
   // 方向用子类型标记存（`to#both`），不占一个字段。
-  // 理由：dir 只有三个短值，而一条关系里最常看的是 to 和 type；
-  // 把方向挂上去比多一行键值更省地方，手改文件时也更好读。
+  // 理由：dir 只有三个短值，而一条系系里最常看的是 to 和 type；
+  // 把方向挂上去比多一行键值更省地方，绘改文件时也更好读。
   // 老文件里没有 # 后缀，读的时候按默认的 forward 处理，向后兼容。
   const dirTag =
     l.dir === 'both' ? '#both' : l.dir === 'none' ? '#none' : l.dir === 'forward' ? '#fwd' : ''
@@ -247,7 +247,7 @@ function serializeArray(key: string, values: string[]): string | null {
  * 把一个实体序列化成 Markdown 文件。
  * 
  * 字段顺序是刻意的：先身份（id/type/name），再分类（tags），
- * 再关系（links），最后时间与地理。这样 diff 起来人是能读的。
+ * 再系系（links），最后时间与地理。这样 diff 起来人是能读的。
  */
 export function serializeEntity(e: Entity): string {
   const lines: string[] = ['---']
@@ -264,7 +264,7 @@ export function serializeEntity(e: Entity): string {
   if (e.dateEnd) lines.push(`dateEnd: ${serializeDate(e.dateEnd)}`)
   if (e.at) lines.push(`at: ${quoteIfNeeded(e.at)}`)
 
-  // 手绘图谱的位置。坐标保留一位小数就够了 —— 再多只会让 diff 变吵
+  // 绘绘图谱的位置。坐标保留一位小数就够了 —— 再多只会让 diff 变吵
   if (e.graphPos && e.graphPos.length > 0) {
     lines.push('graphPos:')
     for (const p of e.graphPos) {
@@ -375,7 +375,7 @@ function toLinks(v: YamlValue | undefined): EntityLink[] {
       dir,
       dash: o.dashed === true || o.dashed === 'true' ? 'dashed' : undefined,
       // 只接受调色板里已知的名字，未知值当作没设 ——
-      // 免得手改文件写错一个词就让线变成看不见的颜色
+      // 免得绘改文件写错一个词就让线变成看不见的颜色
       color: isLinkColor(o.color) ? o.color : undefined,
       note: o.note !== undefined && String(o.note) !== '' ? String(o.note) : undefined,
       weight: optionalNumber(o.weight),
@@ -384,7 +384,7 @@ function toLinks(v: YamlValue | undefined): EntityLink[] {
   return out
 }
 
-/** 解析手绘图谱的位置数组 */
+/** 解析绘绘图谱的位置数组 */
 function toGraphPositions(v: YamlValue | undefined): GraphPosition[] | undefined {
   if (!Array.isArray(v)) return undefined
   const out: GraphPosition[] = []

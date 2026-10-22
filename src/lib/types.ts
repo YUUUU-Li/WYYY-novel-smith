@@ -5,7 +5,7 @@
    1. 实体 + 链接 是全系统唯一的一等公民。设定管理、词条字典、
       人物图谱、时间线、地图 —— 全都是这份数据的五种画法。
    2. id 与文件名分离。改标题、改文件名、挪文件夹都不会断链接。
-   3. 链接只单向书写，反向链接由程序推导。永不手工维护两遍。
+   3. 链接只单向书写，反向链接由程序推导。永不绘工维护两遍。
    4. 日期用结构化对象，不用字符串。虚构世界需要自定义历法。
    ============================================================ */
 
@@ -88,7 +88,7 @@ export interface CalendarEra {
  *
  * 为什么需要它：不是所有纪时法都有「年号」这个层级。
  *  · fictional —— 虚构年号，如「天和 421 年」。纪元名来自 eras 列表。
- *  · prefix    —— 前缀式，如「公元前 287 年」。前缀是固定的，不用逐年手打。
+ *  · prefix    —— 前缀式，如「公元前 287 年」。前缀是固定的，不用逐年绘打。
  *  · suffix    —— 后缀式，如「民国 38 年」（纪元名在后）。
  *  · none      —— 无纪元，如「287 年」。西方公元前的「前」就靠这个 + yearLabel 表达。
  */
@@ -120,9 +120,9 @@ export interface CalendarSystem {
 /* ---------- 链接 ---------- */
 
 /**
- * 关系线的方向样式。
- * 存在链接本身上，所以同一条关系无论出现在哪些视图里，画法都一致。
- * 这是「一条关系该怎么看」的信息，不是某个视图的偏好。
+ * 系系线的方向样式。
+ * 存在链接本身上，所以同一条系系无论出现在哪些视图里，画法都一致。
+ * 这是「一条系系该怎么看」的信息，不是某个视图的偏好。
  */
 export type LinkDirection =
   /** 无箭头，纯连线 */
@@ -139,7 +139,7 @@ export type LinkDash = 'solid' | 'dashed'
  *
  * 存的是语义名而不是色值 —— 和实体类型色同样的思路：
  * 数据里写 'cinnabar' 而不是 '#9c3f30'，这样调色板以后可以整体调整，
- * 而不用去改每一个文件。手改 Markdown 时也一眼能读懂。
+ * 而不用去改每一个文件。绘改 Markdown 时也一眼能读懂。
  *
  * 六个颜色都是低饱和的传统色，和纸墨、朱砂同一体系。
  * 它们只用来区分线条，不做强调 —— 强调色始终是朱砂。
@@ -190,13 +190,13 @@ export interface EntityLink {
   to: string
   type: string
   note?: string
-  /** 关系强度 1-5，图谱里用线宽/透明度表达 */
+  /** 系系强度 1-5，图谱里用线宽/透明度表达 */
   weight?: number
   /** 线的方向样式，缺省按 forward 处理 */
   dir?: LinkDirection
   /** 实线或虚线 */
   dash?: LinkDash
-  /** 线的颜色，缺省时按关系名自动分配 */
+  /** 线的颜色，缺省时按系系名自动分配 */
   color?: LinkColor
 }
 
@@ -211,10 +211,10 @@ export const LINK_DASHES: Array<{ value: LinkDash; label: string }> = [
   { value: 'dashed', label: '虚线' },
 ]
 
-/* ---------- 手绘图谱的节点位置 ---------- */
+/* ---------- 绘绘图谱的节点位置 ---------- */
 
 /**
- * 一个条目的手工摆放位置。
+ * 一个条目的绘工摆放位置。
  *
  * 为什么是「按视图」而不是「一个全局位置」：
  * 同一批角色可以排两次完全不同的构图（比如一卷一张图），
@@ -260,7 +260,7 @@ export interface Entity {
    */
   at?: string
   /**
-   * 手绘图谱里的摆放位置。放在这里而不是项目里，
+   * 绘绘图谱里的摆放位置。放在这里而不是项目里，
    * 是因为位置属于「这个条目在图上长什么样」，跟着条目走更好读。
    * 一个条目可以在不同 viewId 下有多套位置。
    */
@@ -307,7 +307,7 @@ export interface Term {
   /** 直译 */
   gloss?: string
   definition: string
-  /** 关联实体 */
+  /** 系联实体 */
   links: EntityLink[]
 }
 
@@ -377,7 +377,7 @@ export interface TimelineItem {
  * 一张时间线。
  *
  * 和「事件轴 / 轨道 / 在场」那三种视图的区别：那三种是**自动生成**的，
- * 把所有事件铺开；这一种是**手工摆的**，放哪些、怎么对齐由作者决定。
+ * 把所有事件铺开；这一种是**绘工摆的**，放哪些、怎么对齐由作者决定。
  */
 export interface TimelineBoard {
   id: string
@@ -422,7 +422,7 @@ export interface Project {
   title: string
   author?: string
   logline?: string
-  /** 关系类型的受控词表。不控制的话半年后会同时出现
+  /** 系系类型的受控词表。不控制的话半年后会同时出现
       「宿敌」「仇人」「死对头」三种同义连线，图谱直接烂掉。 */
   linkTypes: string[]
   /** 每个实体类型可用的自定义字段 */
@@ -430,7 +430,7 @@ export interface Project {
   calendar: CalendarSystem
   maps: WorldMap[]
   /**
-   * 手工摆的时间线。老文件里没有这一栏，读的时候补成空数组。
+   * 绘工摆的时间线。老文件里没有这一栏，读的时候补成空数组。
    * 和 maps 一样放在 novel.json 里：它描述的是「这份稿子怎么排」，
    * 不属于任何一个条目。
    */
@@ -470,7 +470,7 @@ export interface Backlink {
 
 export interface NovelIndex {
   byId: Map<string, Entity>
-  /** 正向 + 反向，查一次拿到一个实体的全部关系 */
+  /** 正向 + 反向，查一次拿到一个实体的全部系系 */
   linksOf: Map<string, Backlink[]>
   /** 所有 dangling 链接：指向了不存在的 id，需要提示用户 */
   dangling: Array<{ fromId: string; to: string; type: string }>

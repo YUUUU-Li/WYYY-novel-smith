@@ -2,11 +2,11 @@
    内存索引：从实体数组算出所有派生结构
    
    文件是真相，索引只是缓存。任何时候索引都可以整个丢掉重建。
-   这也是为什么改文件、手工编辑文件都能被正确反映。
+   这也是为什么改文件、绘工编辑文件都能被正确反映。
    
-   核心工作：把「单向书写」的 links 变成双向可见的关系。
+   核心工作：把「单向书写」的 links 变成双向可见的系系。
    你在林昭里写「林昭 → 苏无咎：宿敌」，苏无咎那边自动能看到
-   「← 林昭：宿敌」。你永远不用写两遍，也不会出现单边幽灵关系。
+   「← 林昭：宿敌」。你永远不用写两遍，也不会出现单边幽灵系系。
    ============================================================ */
 
 import type {
@@ -97,8 +97,8 @@ export function buildIndex(novel: Novel): NovelIndex {
 }
 
 /**
- * 取一个实体的全部关系，出边和入边分开，各自内部按类型聚拢。
- * 界面上的「关系」区块就是吃这个。
+ * 取一个实体的全部系系，出边和入边分开，各自内部按类型聚拢。
+ * 界面上的「系系」区块就是吃这个。
  */
 export function resolveLinks(
   entity: Entity,
@@ -148,7 +148,7 @@ export function entitiesOfType(novel: Novel, type: EntityType): Entity[] {
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
 }
 
-/** 某地点关联的角色与事件：图谱和地图侧栏都要用。
+/** 某地点系联的角色与事件：图谱和地图侧栏都要用。
     `at` 走一次解析 —— 事件的地点可能是地图区域，而那个区域绑的就是这个地点。 */
 export function relatedAt(novel: Novel, locationId: string): Entity[] {
   const out: Entity[] = []
@@ -163,8 +163,8 @@ export function relatedAt(novel: Novel, locationId: string): Entity[] {
 /**
  * 一场事件里的角色（参与角色）。
  *
- * 「参与」这条关系是单向书写的：可能写在事件上（在事件里选参与角色），
- * 也可能写在角色上（手绘连线或者老文件）。两个方向都算，
+ * 「参与」这条系系是单向书写的：可能写在事件上（在事件里选参与角色），
+ * 也可能写在角色上（绘绘连线或者老文件）。两个方向都算，
  * 否则同一个信息会因为「写在谁那边」而有时看得见有时看不见。
  */
 export function castOf(novel: Novel, eventId: string): Entity[] {

@@ -69,7 +69,7 @@ export type StorageMode = 'localStorage' | 'filesystem'
 export type ViewId =
   | 'overview'
   | 'entities'
-  /** 手绘图谱：拖词条进来、自己摆位、自己连线 */
+  /** 关系网：拖词条进来、自己摆位、自己连线 */
   | 'sketch'
   | 'timeline'
   | 'maps'
@@ -117,7 +117,7 @@ interface State {
   retrySave: () => Promise<void>
 
   /* ---- 撤回 / 重做 ----
-     整个应用只有这一套：不管在设定、大纲、地图、时间线还是手绘里改的，
+     整个应用只有这一套：不管在设定、大纲、地图、时间线还是关系网里改的，
      都是同一个栈。理由见 lib/undo-stack.ts 顶部。 */
   undoDepth: number
   redoDepth: number

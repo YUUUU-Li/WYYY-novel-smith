@@ -732,11 +732,11 @@ async function main() {
     !afterJump.正文.includes('查无此人') && afterJump.占位提示.length > 0,
     `正文「${afterJump.正文}」/ 占位「${afterJump.占位提示}」`)
 
-  console.log('\n[8] 手绘视图的色板不许把工具栏挤爆')
+  console.log('\n[8] 关系网视图的色板不许把工具栏挤爆')
 
   await evaluate(`
     (() => {
-      const t = Array.from(document.querySelectorAll('.nav-tab')).find(b => b.textContent.includes('手绘'))
+      const t = Array.from(document.querySelectorAll('.nav-tab')).find(b => b.textContent.includes('关系网'))
       if (t) t.click()
       return true
     })()
@@ -758,12 +758,12 @@ async function main() {
       }
     })()
   `)
-  check('手绘视图有色板', swatchFit !== null)
+  check('关系网视图有色板', swatchFit !== null)
   check('色板有十二个色块', swatchFit?.色块数 === 12, String(swatchFit?.色块数))
   check('色板可以换行，不会溢出', swatchFit?.允许换行 === true && (swatchFit?.行溢出 ?? 1) <= 0,
     JSON.stringify(swatchFit))
 
-  console.log('\n[9] 手绘删除模式：鼠标压住谁，就得标出谁')
+  console.log('\n[9] 关系网删除模式：鼠标压住谁，就得标出谁')
 
   /* 删除是「点一下就没了」的动作。没有悬停反馈就只能凭运气点。
      这一节不是读源码，而是真的把鼠标移上去，再看画面变成了什么样。 */

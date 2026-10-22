@@ -229,8 +229,8 @@ async function main() {
   }
   await shoot('06b-事件-参与角色')
 
-  // 手绘
-  await evaluate(`(() => { const t = Array.from(document.querySelectorAll('.nav-tab')).find(b => b.textContent.includes('手绘')); if (t) t.click(); return true })()`)
+  // 关系网
+  await evaluate(`(() => { const t = Array.from(document.querySelectorAll('.nav-tab')).find(b => b.textContent.includes('关系网')); if (t) t.click(); return true })()`)
   await sleep(1000)
 
   /* 往画布上放几个方格。
@@ -270,7 +270,7 @@ async function main() {
   await dropOnCanvas('苏无咎', 1050, 300)
   await dropOnCanvas('北境要塞', 700, 480)
   await sleep(400)
-  await shoot('07-手绘')
+  await shoot('07-关系网')
 
   /* 删除模式下的悬停反馈：纯视觉的东西，只能截出来看 */
   const clickBtn = async (text) => {

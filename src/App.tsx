@@ -6,7 +6,7 @@ import {
   BookBookmark,
   ClockCounterClockwise,
   MapTrifold,
-  PencilSimple,
+  ShareNetwork,
   SquaresFour,
   WarningCircle,
 } from '@phosphor-icons/react'
@@ -30,7 +30,7 @@ const DISK_POLL_MS = 5000
 export const VIEWS: Array<{ id: ViewId; label: string; icon: typeof Bank }> = [
   { id: 'overview', label: '概览', icon: SquaresFour },
   { id: 'entities', label: '设定', icon: Bank },
-  { id: 'sketch', label: '手绘', icon: PencilSimple },
+  { id: 'sketch', label: '关系网', icon: ShareNetwork },
   { id: 'timeline', label: '时间线', icon: ClockCounterClockwise },
   { id: 'maps', label: '地图', icon: MapTrifold },
   { id: 'outline', label: '大纲', icon: BookBookmark },
@@ -140,8 +140,8 @@ export function App() {
 /* ============================================================
    撤回 / 重做
 
-   一个按钮管全应用：设定、大纲、时间线、地图、手绘，改的都是同一份
-   Novel，所以共用同一个栈。手绘页原来那块自己的撤销按钮已经并进来了
+   一个按钮管全应用：设定、大纲、时间线、地图、关系网，改的都是同一份
+   Novel，所以共用同一个栈。关系网页原来那块自己的撤销按钮已经并进来了
    —— 两个撤销按钮会让人不知道该按哪个，而且各自只有一半的历史。
 
    为什么显示「撤回：删除条目」而不是只写「撤回」：

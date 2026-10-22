@@ -1,11 +1,11 @@
 /* ============================================================
-   手绘图谱的几何与布局测试
+   绘绘图谱的几何与布局测试
 
    这个功能的失败模式：
-   1. 线头样式丢失 —— 关系只写在一侧时，你设的双向箭头画成单向
+   1. 线头样式丢失 —— 系系只写在一侧时，你设的双向箭头画成单向
    2. 连线插进方格内部，箭头被格子盖住
    3. 拖进来的格子叠在一起，拖了五个只看见一个
-   4. 位置没能落盘，关掉重开构图就没了
+   4. 位置没能落盘，系掉重开构图就没了
 
    这四条都只能靠测试按住。
 
@@ -152,9 +152,9 @@ console.log('\n[4] 连线的取舍')
   ]
   const g2 = layoutGraph(one, VIEW)
   check('一端没上画布时不画线', g2.edges.length === 0, String(g2.edges.length))
-  check('未上画布的关联条目被列出来', g2.notPlaced.some((e) => e.id === 'b'),
+  check('未上画布的系联条目被列出来', g2.notPlaced.some((e) => e.id === 'b'),
     g2.notPlaced.map((e) => e.name).join(' '))
-  check('完全无关的条目不算进去', !g2.notPlaced.some((e) => e.id === 'c'))
+  check('完全无系的条目不算进去', !g2.notPlaced.some((e) => e.id === 'c'))
 
   // 都没放 → 什么都不画
   const g3 = layoutGraph([a, b], VIEW)
@@ -182,10 +182,10 @@ console.log('\n[5] 两格之间的多条线（不能覆盖、可单独删除）'
     ],
     VIEW,
   )
-  check('两个不同关系类型各画一条', g.edges.length === 2, String(g.edges.length))
+  check('两个不同系系类型各画一条', g.edges.length === 2, String(g.edges.length))
   check('两条线的 key 不同', g.edges[0]?.key !== g.edges[1]?.key)
 
-  // 关键：两条线必须真正分开，而不是叠在同一条轨迹上
+  // 系键：两条线必须真正分开，而不是叠在同一条轨迹上
   const e1 = g.edges[0]
   const e2 = g.edges[1]
   const dist = Math.hypot(e1.mx - e2.mx, e1.my - e2.my)
@@ -258,7 +258,7 @@ console.log('\n[5] 两格之间的多条线（不能覆盖、可单独删除）'
     ],
     VIEW,
   )
-  check('三个关系类型画三条线', g.edges.length === 3, String(g.edges.length))
+  check('三个系系类型画三条线', g.edges.length === 3, String(g.edges.length))
   // 水平排列时法线是竖直方向，所以看 my 的分布
   const mid = NODE_H / 2
   const ys = g.edges.map((e) => e.my).sort((x, y) => x - y)
@@ -266,17 +266,17 @@ console.log('\n[5] 两格之间的多条线（不能覆盖、可单独删除）'
     Math.abs((ys[1] - ys[0]) - (ys[2] - ys[1])) < 0.5,
     ys.map((v) => v.toFixed(1)).join(' / '))
   check('中间那条正好在中线上', Math.abs(ys[1] - mid) < 0.5, `${ys[1]} vs ${mid}`)
-  check('外侧两条关于中线对称',
+  check('外侧两条系于中线对称',
     Math.abs((mid - ys[0]) - (ys[2] - mid)) < 0.5,
     `${ys[0].toFixed(1)} / ${mid} / ${ys[2].toFixed(1)}`)
 }
 
-/* ---------------- 6. 线头样式不能丢（关键） ---------------- */
+/* ---------------- 6. 线头样式不能丢（系键） ---------------- */
 
-console.log('\n[6] 线头与线型（关系只写一侧时最容易出错）')
+console.log('\n[6] 线头与线型（系系只写一侧时最容易出错）')
 
 {
-  // 关系只写在乙那一侧，甲那边什么都没有。
+  // 系系只写在乙那一侧，甲那边什么都没有。
   // 这是单向书写，非常常见 —— 如果只读「自己这侧」，样式会全部退回默认值。
   const a = E({ id: 'a', type: 'character', name: '甲' })
   const b = E({
@@ -311,7 +311,7 @@ console.log('\n[6] 线头与线型（关系只写一侧时最容易出错）')
 }
 
 {
-  const a = E({ id: 'a', type: 'character', name: '甲', links: [{ to: 'b', type: '相关', dir: 'none' }] })
+  const a = E({ id: 'a', type: 'character', name: '甲', links: [{ to: 'b', type: '相系', dir: 'none' }] })
   const b = E({ id: 'b', type: 'character', name: '乙' })
   const g = layoutGraph(
     [
@@ -488,15 +488,15 @@ console.log('\n[8] 连线与方格之间要留空隙')
   check('距离足够时留满空隙', Math.abs(gap - NODE_GAP) < 0.01, String(gap.toFixed(2)))
 }
 
-/* ---------------- 9. 长关系名不能盖住邻线 ---------------- */
+/* ---------------- 9. 长系系名不能盖住邻线 ---------------- */
 
-console.log('\n[9] 长关系名的截断')
+console.log('\n[9] 长系系名的截断')
 
 {
   check('短名字不截断', truncateLabel('师徒') === '师徒')
   check('刚好到上限不截断', truncateLabel('一二三四五六七八九十') === '一二三四五六七八九十')
 
-  const long = '这是一个非常长的关系名字用来测试截断'
+  const long = '这是一个非常长的系系名字用来测试截断'
   const shown = truncateLabel(long)
   check('超长名字被截断', shown.length === LABEL_MAX_CHARS, `${shown.length}`)
   check('截断后有省略号', shown.endsWith('…'), shown)
@@ -515,8 +515,8 @@ console.log('\n[9] 长关系名的截断')
         ...E({
           id: 'a', type: 'character', name: '甲',
           links: [
-            { to: 'b', type: '长关系名甲乙丙丁戊己庚辛壬癸子丑寅卯' },
-            { to: 'b', type: '另一个同样很长的关系名字测试用例' },
+            { to: 'b', type: '长系系名甲乙丙丁戊己庚辛壬癸子丑寅卯' },
+            { to: 'b', type: '另一个同样很长的系系名字测试用例' },
           ],
         }),
         graphPos: withPosition(E({ id: 'a', type: 'character', name: '甲' }), VIEW, 0, 0),
@@ -550,7 +550,7 @@ console.log('\n[10] 箭头三角')
   // 曲线上的箭头要沿切线：并行散开时用两点连线会让指向偏掉
   const a = E({
     id: 'a', type: 'character', name: '甲',
-    links: [{ to: 'b', type: '甲关系' }, { to: 'b', type: '乙关系', dir: 'both' }],
+    links: [{ to: 'b', type: '甲系系' }, { to: 'b', type: '乙系系', dir: 'both' }],
   })
   const b = E({ id: 'b', type: 'character', name: '乙' })
   const g = layoutGraph(
@@ -570,7 +570,7 @@ console.log('\n[10] 箭头三角')
   }
   const none = layoutGraph(
     [
-      { ...E({ id: 'a', type: 'character', name: '甲', links: [{ to: 'b', type: '相关', dir: 'none' }] }), graphPos: withPosition(E({ id: 'a', type: 'character', name: '甲' }), VIEW, 0, 0) },
+      { ...E({ id: 'a', type: 'character', name: '甲', links: [{ to: 'b', type: '相系', dir: 'none' }] }), graphPos: withPosition(E({ id: 'a', type: 'character', name: '甲' }), VIEW, 0, 0) },
       { ...b, graphPos: withPosition(b, VIEW, 400, 0) },
     ],
     VIEW,
@@ -623,7 +623,7 @@ links:
 正文
 `
   const e = parseEntity(legacy, { id: 'c1' })
-  check('旧格式的关系仍能读', e.links.length === 1 && e.links[0].to === 'c2', JSON.stringify(e.links))
+  check('旧格式的系系仍能读', e.links.length === 1 && e.links[0].to === 'c2', JSON.stringify(e.links))
   check('旧格式没有方向信息（走默认）', e.links[0].dir === undefined)
 }
 
@@ -631,7 +631,7 @@ links:
   // 名字里带 # 的条目不能被误当成方向标记
   const tricky = E({
     id: 'c1', type: 'character', name: '甲',
-    links: [{ to: 'c2#abc', type: '相关' }],
+    links: [{ to: 'c2#abc', type: '相系' }],
   })
   const back = parseEntity(serializeEntity(tricky), { id: 'c1' })
   check('名字里的 # 不被吞掉', back.links[0]?.to === 'c2#abc', back.links[0]?.to)
@@ -680,14 +680,14 @@ console.log('\n[11] 连线的颜色')
 }
 
 {
-  // 显式颜色优先于按关系名推导
+  // 显式颜色优先于按系系名推导
   const explicit = edgeColorVar('师徒', 'indigo')
   const auto = edgeColorVar('师徒')
   check('设了颜色就用设的', explicit === '#3d5a80', explicit)
-  check('没设颜色时按关系名推导', auto.startsWith('var('), auto)
-  // 同名关系在任何图里颜色一致
-  check('同名关系颜色稳定', edgeColorVar('师徒') === edgeColorVar('师徒'))
-  check('不同关系名可能不同色', edgeColorVar('师徒') !== edgeColorVar('仇视') ||
+  check('没设颜色时按系系名推导', auto.startsWith('var('), auto)
+  // 同名系系在任何图里颜色一致
+  check('同名系系颜色稳定', edgeColorVar('师徒') === edgeColorVar('师徒'))
+  check('不同系系名可能不同色', edgeColorVar('师徒') !== edgeColorVar('仇视') ||
     true, '允许碰撞，六个色位不够')
 }
 
@@ -705,10 +705,10 @@ console.log('\n[11] 连线的颜色')
 
   const back = parseEntity(text, { id: 'c1' })
   check('颜色读得回来', back.links[0]?.color === 'violet', back.links[0]?.color)
-  check('没设颜色的关系不凭空多出颜色', back.links[1]?.color === undefined)
+  check('没设颜色的系系不凭空多出颜色', back.links[1]?.color === undefined)
   check('二次序列化一致', serializeEntity(back) === text)
 
-  // 手改文件写错颜色名：当作没设，而不是渲染成坏颜色
+  // 绘改文件写错颜色名：当作没设，而不是渲染成坏颜色
   const typo = `---
 id: c1
 type: character
@@ -721,16 +721,16 @@ links:
 `
   const parsed = parseEntity(typo, { id: 'c1' })
   check('颜色名写错时当作没设', parsed.links[0]?.color === undefined, String(parsed.links[0]?.color))
-  check('写错颜色不影响这条关系本身', parsed.links[0]?.to === 'c2' && parsed.links[0]?.type === '宿敌')
+  check('写错颜色不影响这条系系本身', parsed.links[0]?.to === 'c2' && parsed.links[0]?.type === '宿敌')
 }
 
 {
-  // 两条线可以各自设不同颜色（用来区分同名的两条关系）
+  // 两条线可以各自设不同颜色（用来区分同名的两条系系）
   const a = E({
     id: 'a', type: 'character', name: '甲',
     links: [
-      { to: 'b', type: '相关', color: 'indigo' },
-      { to: 'b', type: '相关', color: 'jade' },
+      { to: 'b', type: '相系', color: 'indigo' },
+      { to: 'b', type: '相系', color: 'jade' },
     ],
   })
   const b = E({ id: 'b', type: 'character', name: '乙' })
@@ -741,7 +741,7 @@ links:
     ],
     VIEW,
   )
-  check('同名两条关系各成一条线', g.edges.length === 2, String(g.edges.length))
+  check('同名两条系系各成一条线', g.edges.length === 2, String(g.edges.length))
   check('两条线颜色不同',
     g.edges[0].color !== g.edges[1].color,
     `${g.edges[0].color} / ${g.edges[1].color}`)
@@ -757,26 +757,26 @@ console.log('\n[12] 撤销栈回滚什么')
 
 {
   /* 撤销栈存的是「links 与 graphPos」，不是整个条目。
-     所以它只能回滚关系和位置 —— 正文、名字这些不该被撤销影响，
+     所以它只能回滚系系和位置 —— 正文、名字这些不该被撤销影响，
      否则按一下撤销会把你刚写的正文也退回去。
      这里把这个契约固定住：快照结构与更新语义一致。 */
   const e = E({
     id: 'c1', type: 'character', name: '甲',
     body: '正文不该被撤销影响',
     fields: { 能力: '寒刃' },
-    links: [{ to: 'c2', type: '旧关系' }],
+    links: [{ to: 'c2', type: '旧系系' }],
     graphPos: withPosition(E({ id: 'c1', type: 'character', name: '甲' }), VIEW, 10, 20),
   })
 
   // 模拟 pushUndo 存下的东西
   const snapshot = { id: e.id, links: e.links, graphPos: e.graphPos }
-  // 模拟一次改动：加一条新关系
-  const afterAdd = { ...e, links: [...e.links, { to: 'c3', type: '新关系' }] }
-  check('改动后关系数增加', afterAdd.links.length === 2, String(afterAdd.links.length))
+  // 模拟一次改动：加一条新系系
+  const afterAdd = { ...e, links: [...e.links, { to: 'c3', type: '新系系' }] }
+  check('改动后系系数增加', afterAdd.links.length === 2, String(afterAdd.links.length))
 
   // 模拟撤销
   const restored = { ...afterAdd, links: snapshot.links, graphPos: snapshot.graphPos }
-  check('撤销把关系数退回去', restored.links.length === 1, String(restored.links.length))
+  check('撤销把系系数退回去', restored.links.length === 1, String(restored.links.length))
   check('撤销保留正文', restored.body === '正文不该被撤销影响', restored.body)
   check('撤销保留自定义字段', restored.fields?.['能力'] === '寒刃')
   check('撤销保留名字', restored.name === '甲')
@@ -788,15 +788,15 @@ console.log('\n[12] 撤销栈回滚什么')
 }
 
 {
-  /* 连线后立刻撤销：应该回到「没有这条关系」的状态。
+  /* 连线后立刻撤销：应该回到「没有这条系系」的状态。
      这是这一轮新增的能力 —— 连线原来不进撤销栈。 */
   const before = E({ id: 'a', type: 'character', name: '甲' })
   const snap = { id: before.id, links: before.links, graphPos: before.graphPos }
   const afterLink = {
     ...before,
-    links: [...before.links, { to: 'b', type: '点击编辑关系' }],
+    links: [...before.links, { to: 'b', type: '点击编辑系系' }],
   }
-  check('连线后有一条关系', afterLink.links.length === 1)
+  check('连线后有一条系系', afterLink.links.length === 1)
   const undone = { ...afterLink, links: snap.links }
   check('撤销连线后回到零条', undone.links.length === 0, String(undone.links.length))
 }
@@ -822,10 +822,10 @@ console.log('\n[12] 撤销栈回滚什么')
 console.log('')
 console.log(`共 ${checks} 项检查，失败 ${failures} 项。`)
 if (failures === 0) {
-  console.log('结论：手绘图谱的几何、线头样式与落盘都可靠。')
+  console.log('结论：绘绘图谱的几何、线头样式与落盘都可靠。')
   process.exit(0)
 }
-console.log('结论：手绘图谱行为不符合预期。')
+console.log('结论：绘绘图谱行为不符合预期。')
 process.exit(1)
 
 void Project

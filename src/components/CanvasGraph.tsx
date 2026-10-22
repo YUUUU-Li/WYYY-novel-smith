@@ -1,5 +1,5 @@
 /* ============================================================
-   手绘图谱
+   关系网
 
    交互模型：
      进入时是「选定」模式（不做任何危险操作）
@@ -136,7 +136,7 @@ export function CanvasGraph() {
 
   const selected = novel?.entities.find((e) => e.id === selectedId) ?? null
 
-  /* 手绘页没有自己的撤销栈了：这里每一次改动都经 updateEntity 进 store，
+  /* 关系网页没有自己的撤销栈了：这里每一次改动都经 updateEntity 进 store，
      统一由顶栏那个撤回按钮 / Ctrl+Z 负责。
      以前这里存一份「受影响的 links + graphPos」，只管画布内的删除和改名，
      结果同一个页面有两个撤销（一个只管一半），作者不知道该按哪个。 */

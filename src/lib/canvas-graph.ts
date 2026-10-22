@@ -1,5 +1,5 @@
 /* ============================================================
-   手绘图谱：几何与布局
+   关系网：几何与布局
 
    和 views/GraphView.tsx 的区别：
    那个是「力导向模拟」—— 节点自己找位置、互相推挤，你只能观察。
@@ -34,7 +34,7 @@ export const NODE_GAP = 7
 /** 关系名最长显示多少个字，超出截断。防止长文字盖住旁边的线 */
 export const LABEL_MAX_CHARS = 10
 
-/** 默认视图 id。第一次打开手绘图谱时用它。 */
+/** 默认视图 id。第一次打开关系网时用它。 */
 export const DEFAULT_VIEW_ID = 'main'
 
 export function nodeCenter(x: number, y: number): { x: number; y: number } {
