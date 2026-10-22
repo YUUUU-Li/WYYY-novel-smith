@@ -16,6 +16,7 @@ dist/
 .org-bundle.mjs
 .places-bundle.mjs
 .terms-bundle.mjs
+.undo-bundle.mjs
 
 # Rust 构建产物
 src-tauri/target/

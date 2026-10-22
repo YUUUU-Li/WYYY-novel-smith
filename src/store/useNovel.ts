@@ -40,6 +40,7 @@ import { runSave, type SaveState } from '../lib/save-status'
 import { remapDeletedRegions } from '../lib/places'
 import { normalizeBoards } from '../lib/boards'
 import { migrateTerms } from '../lib/terms-migration'
+import { UndoStack } from '../lib/undo-stack'
 
 import {
   FileStorage,
@@ -114,6 +115,17 @@ interface State {
   saveState: SaveState
   /** 写盘失败后的手动重试 */
   retrySave: () => Promise<void>
+
+  /* ---- 撤回 / 重做 ----
+     整个应用只有这一套：不管在设定、大纲、地图、时间线还是手绘里改的，
+     都是同一个栈。理由见 lib/undo-stack.ts 顶部。 */
+  undoDepth: number
+  redoDepth: number
+  /** 给按钮 tooltip 用：「撤回：删除条目」 */
+  undoLabel: string | null
+  redoLabel: string | null
+  undo: () => void
+  redo: () => void
 
   init: () => Promise<void>
   openProject: (id: string) => Promise<void>
@@ -225,6 +237,10 @@ export const useStore = create<State>((set, get) => {
    */
   let diskBaseline: string | null = null
 
+  /* 撤回栈。放在模块作用域（不进 React 状态）：它只是记账，
+     真正需要重渲染的只有 undoDepth / undoLabel 这几个数字。 */
+  const history = new UndoStack<Novel>(40, 700)
+
   /** 写盘之后重新取基线。不做这一步，我们自己的保存会被误判成外部改动 */
   const refreshBaseline = async (novel: Novel): Promise<void> => {
     const store = getStorage()
@@ -243,20 +259,51 @@ export const useStore = create<State>((set, get) => {
     }, ms)
   }
 
-  /** 提交一次内存变更并安排落盘 */
-  const commit = (mutate: (n: Novel) => Novel, reindexToo = true) => {
+  /** 提交一次内存变更并安排落盘。
+   *
+   *  `label` 是给撤回按钮看的（「撤回：删除条目」）。同一标签的连续改动
+   *  会被撤回栈合并成一步 —— 否则打一行字要点几十次撤回。 */
+  const commit = (mutate: (n: Novel) => Novel, reindexToo = true, label = '编辑') => {
     const cur = get().novel
     if (!cur) return
     const next = mutate(cur)
     next.project = projectUpdated(normalizeOrg(next.project))
+    history.record(cur, label)
     set({
       novel: next,
       index: reindexToo ? reindex(next) : get().index,
       // 内存已改但还没落盘。作者应该能看见「有未保存的改动」，
       // 而不是在磁盘满、权限失效时一直以为存上了。
       saveState: { kind: 'idle' },
+      undoDepth: history.undoDepth,
+      redoDepth: history.redoDepth,
+      undoLabel: history.undoLabel,
+      redoLabel: history.redoLabel,
     })
     scheduleSave()
+  }
+
+  /** 把撤回/重做拿到的快照装回界面。选中的条目可能已经不在了，得让位 */
+  const restoreSnapshot = (target: Novel) => {
+    const sel = get().selectedId
+    set({
+      novel: target,
+      index: reindex(target),
+      selectedId: sel && target.entities.some((e) => e.id === sel) ? sel : null,
+      saveState: { kind: 'idle' },
+      undoDepth: history.undoDepth,
+      redoDepth: history.redoDepth,
+      undoLabel: history.undoLabel,
+      redoLabel: history.redoLabel,
+    })
+    // 撤回也是一次真实改动，必须落盘，否则关掉程序就白撤了
+    scheduleSave(120)
+  }
+
+  /** 换作品 / 换存储位置 / 接受磁盘版本时调用：不能撤到别的内容里去 */
+  const clearHistory = () => {
+    history.clear()
+    set({ undoDepth: 0, redoDepth: 0, undoLabel: null, redoLabel: null })
   }
 
   /**
@@ -305,6 +352,7 @@ export const useStore = create<State>((set, get) => {
       pendingRoot: null,
       selectedId: null,
     })
+    clearHistory()
   }
 
   return {
@@ -325,6 +373,10 @@ export const useStore = create<State>((set, get) => {
     canUseFilesystem: supportsFileSystem() || isTauri(),
     diskChange: null,
     saveState: { kind: 'idle' },
+    undoDepth: 0,
+    redoDepth: 0,
+    undoLabel: null,
+    redoLabel: null,
 
     init: async () => {
       /* ── 桌面版先走这条路 ──
@@ -393,6 +445,8 @@ export const useStore = create<State>((set, get) => {
       const n = await getStorage().read(id)
       if (!n) return
       const adopted = adopt(n)
+      // 换了一本书：撤回栈必须清空，否则会撤到上一本书的内容里
+      clearHistory()
       set({
         novel: adopted.novel,
         index: adopted.index,
@@ -410,6 +464,7 @@ export const useStore = create<State>((set, get) => {
       const novel: Novel = { project, entities: [], outline: [], terms: [] }
       const store = getStorage()
       await store.write(novel)
+      clearHistory()
       set({
         novel,
         index: reindex(novel),
@@ -423,6 +478,7 @@ export const useStore = create<State>((set, get) => {
     deleteProject: async (id) => {
       const store = getStorage()
       await store.remove(id)
+      clearHistory()
       const summaries = await store.listProjects()
       if (get().novel?.project.id === id) {
         const next = summaries[0] ? await store.read(summaries[0].id) : null
@@ -437,7 +493,10 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    backToLibrary: () => set({ novel: null, index: null, selectedId: null }),
+    backToLibrary: () => {
+      clearHistory()
+      set({ novel: null, index: null, selectedId: null })
+    },
 
     setView: (view) => set({ view }),
     select: (selectedId) => set({ selectedId }),
@@ -446,7 +505,23 @@ export const useStore = create<State>((set, get) => {
     setSearchOpen: (searchOpen) => set({ searchOpen }),
 
     updateProject: (patch) =>
-      commit((n) => ({ ...n, project: { ...n.project, ...patch } }), false),
+      commit((n) => ({ ...n, project: { ...n.project, ...patch } }), false, '改作品信息'),
+
+    /* ---------- 撤回 / 重做 ---------- */
+
+    undo: () => {
+      const n = get().novel
+      if (!n) return
+      const prev = history.undo(n)
+      if (prev) restoreSnapshot(prev)
+    },
+
+    redo: () => {
+      const n = get().novel
+      if (!n) return
+      const next = history.redo(n)
+      if (next) restoreSnapshot(next)
+    },
 
     applyCalendar: (calendar) =>
       commit((n) => ({
@@ -463,7 +538,7 @@ export const useStore = create<State>((set, get) => {
           dateEnd: stripForNewCalendar(e.dateEnd),
         })),
         outline: stripOutlineDates(n.outline),
-      })),
+      }), false, '换纪时方法'),
 
     addEntity: (type, name, container) => {
       const entity = createEntity(type, name ?? `新${labelOf(type)}`)
@@ -479,7 +554,7 @@ export const useStore = create<State>((set, get) => {
           ...withEntity,
           project: { ...withEntity.project, folders: placed.folders, rootItems: placed.rootItems },
         }
-      })
+      }, true, '新建条目')
       set({ selectedId: entity.id })
       return entity
     },
@@ -488,7 +563,7 @@ export const useStore = create<State>((set, get) => {
       commit((n) => ({
         ...n,
         entities: n.entities.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-      })),
+      }), true, '编辑条目'),
 
     addCast: (eventId, name) => {
       const label = name.trim()
@@ -503,7 +578,7 @@ export const useStore = create<State>((set, get) => {
             : e,
         )
         return { ...n, entities }
-      })
+      }, true, '新建角色')
       return entity
     },
 
@@ -527,12 +602,13 @@ export const useStore = create<State>((set, get) => {
             links: e.links.filter((l) => l.to !== id),
             at: e.at === id ? undefined : e.at,
           })),
-      }))
+      }), true, '删除条目')
       if (get().selectedId === id) set({ selectedId: null })
     },
 
-    setOutline: (outline) => commit((n) => ({ ...n, outline })),
-    setBoards: (boards) => commit((n) => ({ ...n, project: { ...n.project, boards } })),
+    setOutline: (outline) => commit((n) => ({ ...n, outline }), true, '编辑大纲'),
+    setBoards: (boards) =>
+      commit((n) => ({ ...n, project: { ...n.project, boards } }), true, '编辑时间线'),
 
     /* 地图整体换掉（拖动图钉、改区域、删地图都会走到这里）。
        区域被删掉时，指向它的「发生地点」要改写成区域的名字 ——
@@ -545,7 +621,7 @@ export const useStore = create<State>((set, get) => {
           project: { ...n.project, maps },
           ...(entities ? { entities } : {}),
         }
-      }),
+      }, true, '编辑地图'),
 
     /* ---------------- 设定页的组织 ---------------- */
 
@@ -563,7 +639,7 @@ export const useStore = create<State>((set, get) => {
           0,
         )
         return { ...n, project: { ...n.project, folders: placed.folders, rootItems: placed.rootItems } }
-      }, false)
+      }, false, '新建词条夹')
       return folder
     },
 
@@ -579,6 +655,7 @@ export const useStore = create<State>((set, get) => {
           },
         }),
         false,
+        '改词条夹',
       ),
 
     removeFolder: (id) =>
@@ -589,6 +666,7 @@ export const useStore = create<State>((set, get) => {
           return { ...n, project: { ...n.project, ...next } }
         },
         false,
+        '删除词条夹',
       ),
 
     moveOrgItem: (id, toContainer, index, visible, from) =>
@@ -610,6 +688,7 @@ export const useStore = create<State>((set, get) => {
           return { ...n, project: { ...n.project, ...next } }
         },
         false,
+        '移动条目',
       ),
 
     /* 「再放一份」：同一个条目在另一个夹子里也显示一份。
@@ -622,6 +701,7 @@ export const useStore = create<State>((set, get) => {
           return { ...n, project: { ...n.project, ...next } }
         },
         false,
+        '再放一份',
       ),
 
     /* 撤掉某一处摆放。条目本身留着，别处摆的也不动 */
@@ -633,6 +713,7 @@ export const useStore = create<State>((set, get) => {
           return { ...n, project: { ...n.project, ...next } }
         },
         false,
+        '撤掉一处摆放',
       ),
 
     /* ---------- 持久化位置切换 ---------- */
@@ -780,6 +861,8 @@ export const useStore = create<State>((set, get) => {
           ? get().selectedId
           : null
       const adopted = adopt(fromDisk)
+      // 内容是从磁盘换来的，不是作者在这里改的 —— 撤回栈不能再指着旧内容
+      clearHistory()
       set({
         novel: adopted.novel,
         index: adopted.index,

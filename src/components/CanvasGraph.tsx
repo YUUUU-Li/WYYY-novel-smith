@@ -20,7 +20,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowClockwise,
   CaretDown,
   CaretRight,
   CrosshairSimple,
@@ -68,9 +67,6 @@ type Mode = 'select' | 'link' | 'unlink' | 'unplace'
 /** 新连线还没有关系名时用的占位文字。点一下就能改名。 */
 const PLACEHOLDER_TYPE = '点击编辑关系'
 
-/** 撤销栈。删除是破坏性操作，必须能退回来。 */
-type Snapshot = Array<{ id: string; links: Entity['links']; graphPos: Entity['graphPos'] }>
-
 /** 正在改名的连线 */
 interface Renaming {
   edgeKey: string
@@ -112,8 +108,6 @@ export function CanvasGraph() {
   const [hoverNode, setHoverNode] = useState<string | null>(null)
   const [hoverEdge, setHoverEdge] = useState<string | null>(null)
 
-  const undoRef = useRef<Snapshot[]>([])
-  const [undoDepth, setUndoDepth] = useState(0)
 
   const stageRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{
@@ -142,30 +136,10 @@ export function CanvasGraph() {
 
   const selected = novel?.entities.find((e) => e.id === selectedId) ?? null
 
-  /* 撤销：把受影响条目的 links 与 graphPos 存起来 */
-  const pushUndo = useCallback(
-    (ids: string[]) => {
-      if (!novel) return
-      const snap: Snapshot = []
-      for (const id of ids) {
-        const e = novel.entities.find((x) => x.id === id)
-        if (e) snap.push({ id, links: e.links, graphPos: e.graphPos })
-      }
-      undoRef.current.push(snap)
-      // 只留最近 30 步，避免长时间使用后占内存
-      if (undoRef.current.length > 30) undoRef.current.shift()
-      setUndoDepth(undoRef.current.length)
-    },
-    [novel],
-  )
-
-  const undo = () => {
-    const snap = undoRef.current.pop()
-    setUndoDepth(undoRef.current.length)
-    if (!snap) return
-    for (const s of snap) updateEntity(s.id, { links: s.links, graphPos: s.graphPos })
-    setHint('已撤销')
-  }
+  /* 手绘页没有自己的撤销栈了：这里每一次改动都经 updateEntity 进 store，
+     统一由顶栏那个撤回按钮 / Ctrl+Z 负责。
+     以前这里存一份「受影响的 links + graphPos」，只管画布内的删除和改名，
+     结果同一个页面有两个撤销（一个只管一半），作者不知道该按哪个。 */
 
   /* 切换模式时清掉中间状态，避免带着上一个模式的残留操作 */
   const switchMode = (m: Mode) => {
@@ -234,7 +208,6 @@ export function CanvasGraph() {
       const from = novel.entities.find((x) => x.id === linkFrom)
       if (!from) return
       // 连线也要进撤销栈 —— 连错了能一步退回，和删除同等对待
-      pushUndo([from.id])
       // 新关系先不带名字，显示成「点击编辑关系」，点一下就能改。
       // 不自动套用词表里的第一个关系类型 —— 那样会凭空造出一堆
       // 你并没指定的关系，比空着更糟。
@@ -256,16 +229,6 @@ export function CanvasGraph() {
     }
 
     if (mode === 'unplace') {
-      // 删掉方格：它指向别人的、以及别人指向它的，都要清掉
-      const touching = novel.entities
-        .filter(
-          (e) =>
-            e.id === node.id ||
-            e.links.some((l) => l.to === node.id),
-        )
-        .map((e) => e.id)
-      pushUndo(touching)
-
       // 先把所有指向它的关系摘掉
       for (const e of novel.entities) {
         if (e.id === node.id) continue
@@ -295,8 +258,6 @@ export function CanvasGraph() {
       (l) => l.to === edge.toId && l.type === edge.type,
     )
     if (idx === -1) return
-
-    pushUndo([owner.id])
     const next = owner.links.filter((_, i) => i !== idx)
     updateEntity(owner.id, { links: next })
     setHint(`已删除关系「${edge.type}」`)
@@ -331,7 +292,6 @@ export function CanvasGraph() {
       setRenaming(null)
       return
     }
-    pushUndo([owner.id])
     updateEntity(owner.id, {
       links: owner.links.map((l, i) => (i === idx ? { ...l, type: finalName } : l)),
     })
@@ -695,25 +655,6 @@ export function CanvasGraph() {
             删除方格
           </button>
 
-          <button
-            type="button"
-            className="nav-tab"
-            onClick={undo}
-            disabled={undoDepth === 0}
-            title="撤销上一次删除或改名"
-          >
-            <ArrowClockwise size={14} />
-            撤销
-            {/* 步数占一个定宽格子。
-                写成「撤销 (1)」的话按钮会变宽 —— 变宽就可能让工具栏多折
-                一行，画布跟着往下跳。留一格空位，写不写数字高度都一样。 */}
-            <span
-              className="t-num"
-              style={{ display: 'inline-block', minWidth: '1.9em', textAlign: 'left' }}
-            >
-              {undoDepth > 0 ? `(${undoDepth})` : ''}
-            </span>
-          </button>
 
           <div className="flex-1" />
 

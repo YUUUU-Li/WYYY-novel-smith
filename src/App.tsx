@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
+  ArrowUUpLeft,
+  ArrowUUpRight,
   Bank,
   BookBookmark,
   ClockCounterClockwise,
@@ -72,6 +74,36 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [setSearchOpen])
 
+  /**
+   * 全局撤回 / 重做：Ctrl/Cmd+Z 撤回，Ctrl+Shift+Z 或 Ctrl+Y 重做。
+   *
+   * 为什么要在编辑器里让路：正文是 CodeMirror，它自带一套更细的撤销
+   * （按字符/按输入段）。如果这里抢走 Ctrl+Z，作者在正文里打字时的
+   * 撤销粒度会突然变成"整块回退"，反而更难用。所以焦点在编辑区里时
+   * 交给它自己，在别处（改设定、拖位置、删条目）才用全局这套。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const k = e.key.toLowerCase()
+      if (k !== 'z' && k !== 'y') return
+      const el = e.target as HTMLElement | null
+      const inEditor =
+        !!el &&
+        (el.closest('.cm-editor') !== null ||
+          el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable)
+      if (inEditor) return
+      e.preventDefault()
+      const s = useStore.getState()
+      if (k === 'y' || (k === 'z' && e.shiftKey)) s.redo()
+      else s.undo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   if (!ready) {
     return (
       <div className="h-full grid place-items-center">
@@ -101,6 +133,59 @@ export function App() {
           </main>
       </div>
       <SearchPalette />
+    </div>
+  )
+}
+
+/* ============================================================
+   撤回 / 重做
+
+   一个按钮管全应用：设定、大纲、时间线、地图、手绘，改的都是同一份
+   Novel，所以共用同一个栈。手绘页原来那块自己的撤销按钮已经并进来了
+   —— 两个撤销按钮会让人不知道该按哪个，而且各自只有一半的历史。
+
+   为什么显示「撤回：删除条目」而不是只写「撤回」：
+   作者在删东西之前手是抖的，按下之前应该能看见这一步撤的是什么。
+   ============================================================ */
+
+function UndoRedo() {
+  const undo = useStore((s) => s.undo)
+  const redo = useStore((s) => s.redo)
+  const undoDepth = useStore((s) => s.undoDepth)
+  const redoDepth = useStore((s) => s.redoDepth)
+  const undoLabel = useStore((s) => s.undoLabel)
+  const redoLabel = useStore((s) => s.redoLabel)
+
+  return (
+    <div className="flex flex-none items-center gap-0.5">
+      <button
+        type="button"
+        className="btn btn-plain"
+        onClick={undo}
+        disabled={undoDepth === 0}
+        title={
+          undoDepth === 0
+            ? '没有可撤回的改动'
+            : `撤回：${undoLabel ?? '编辑'}（Ctrl+Z，还可退 ${undoDepth} 步）`
+        }
+        aria-label="撤回"
+      >
+        <ArrowUUpLeft size={14} />
+      </button>
+      <button
+        type="button"
+        className="btn btn-plain"
+        onClick={redo}
+        disabled={redoDepth === 0}
+        title={
+          redoDepth === 0
+            ? '没有可重做的改动'
+            : `重做：${redoLabel ?? '编辑'}（Ctrl+Shift+Z，还可重做 ${redoDepth} 步）`
+        }
+        aria-label="重做"
+      >
+        <ArrowUUpRight size={14} />
+      </button>
     </div>
   )
 }
@@ -345,6 +430,8 @@ function TopBar() {
       </nav>
 
       <div className="flex-1" />
+
+      <UndoRedo />
 
       <SaveIndicator />
 
