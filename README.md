@@ -79,6 +79,10 @@ npm run icons:web                   # 同步成 favicon
 npm run build                       # 让 favicon 进 dist/
 ```
 
+> **现在的图标是 `logo.png` 生成的**（米色底、墨色「言」、朱点）：`npm run icons:from -- logo.png`。
+> `npm run icons` 画的是早期那版「夜蓝 + 三行刻痕」的程序化图形 —— 跑它会把你换的图标覆盖回去，
+> 所以那个脚本现在会检查 `logo.png` 是否存在，存在就直接退出、不动图标。
+
 **快捷方式不用重建。** 它存的是 `src-tauri/icons/icon.ico` 这个路径，文件内容一换，图标就跟着换。
 如果资源管理器还顽固地显示旧图标，那是 Windows 的图标缓存 —— 把快捷方式删掉重建一个，或者注销一次就干净了。
 
