@@ -71,7 +71,8 @@ interface TauriRawNovel {
 export class TauriStorage implements StorageAdapter {
   readonly kind = 'tauri'
 
-  constructor(private root: string) {}
+  /** 真实磁盘路径。rememberRoot 要用它记住，所以是公开的。 */
+  constructor(readonly root: string) {}
 
   get rootName(): string {
     // 只显示最后一级目录名，和浏览器版保持一致的信息量
@@ -139,12 +140,19 @@ export class TauriStorage implements StorageAdapter {
   }
 
   /**
-   * 桌面版没有「外部改动检测」这个必要 —— 浏览器版需要它是因为
-   * 权限模型导致的间接访问，而桌面版直接读写磁盘，改动立刻可见。
-   * 返回 null 即表示不支持，store 会自动跳过检测。
+   * 外部改动检测。
+   *
+   * 桌面版虽然直接读写磁盘，但**一样需要这个**：作者完全可能在记事本里
+   * 改 `林昭.md`，而程序手里还是旧的那一份 —— 这时候如果程序保存一次，
+   * 那份改动就被覆盖了。所以这里回一个「路径 + 修改时间」的指纹，
+   * 变了再去读内容、再问作者。
    */
-  async signatureOf(): Promise<string | null> {
-    return null
+  async signatureOf(novel: Novel): Promise<string | null> {
+    const invoke = await getInvoke()
+    return await invoke<string | null>('signature_of', {
+      root: this.root,
+      id: novel.project.id,
+    })
   }
 }
 
@@ -175,6 +183,15 @@ export function lastRoot(): string | null {
     return localStorage.getItem(LS_ROOT)
   } catch {
     return null
+  }
+}
+
+/** 用户切回「程序内部存储」时，把记住的路径也丢掉 */
+export function forgetRoot(): void {
+  try {
+    localStorage.removeItem(LS_ROOT)
+  } catch {
+    // 同上，存不了也就算了
   }
 }
 

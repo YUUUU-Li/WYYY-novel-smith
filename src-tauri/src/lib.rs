@@ -34,6 +34,7 @@ pub fn run() {
             commands::write_novel,
             commands::delete_novel,
             commands::pick_library,
+            commands::signature_of,
         ])
         .setup(|app| {
             let (dir, fell_back) = pick_webview_dir(app.handle());

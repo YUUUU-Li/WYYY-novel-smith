@@ -288,3 +288,76 @@ pub async fn pick_library(app: tauri::AppHandle) -> Result<Option<String>, Strin
         .blocking_pick_folder();
     Ok(picked.map(|p| p.to_string()))
 }
+
+/* ============================================================
+   外部改动检测用的指纹
+
+   为什么要它：程序是"整份写回"的，作者在记事本里改了 `林昭.md`
+   之后如果程序不知情地保存一次，那份改动就被覆盖掉了。
+   所以每 5 秒看一眼这几个文件的「路径 + 修改时间」，
+   变了才去读内容、才值得问作者一句。
+
+   只看元信息不看内容：几百个文件读一遍内容太贵。
+   刻意排除 `历史/`（那是每次保存自己写的快照，算进去会永远在误报）
+   以及隐藏文件和 `.tmp`。规则与 TS 侧 FileStorage.signature 保持一致。
+   ============================================================ */
+
+fn walk_signature(dir: &std::path::Path, prefix: &str, out: &mut Vec<(String, u128)>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name.ends_with(".tmp") {
+            continue;
+        }
+        let rel = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let meta = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.is_dir() {
+            if name == HISTORY_DIR {
+                continue;
+            }
+            walk_signature(&entry.path(), &rel, out);
+            continue;
+        }
+        let lower = name.to_lowercase();
+        if !(lower.ends_with(".md") || lower.ends_with(".json")) {
+            continue;
+        }
+        let ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        out.push((rel, ms));
+    }
+}
+
+/// 给出某个作品在磁盘上的指纹。找不到那个作品时返回 null。
+#[tauri::command]
+pub fn signature_of(root: String, id: String) -> Result<Option<String>, String> {
+    let root_buf = PathBuf::from(&root);
+    let dir = match find_folder_by_id(&root_buf, &id) {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+    let mut entries: Vec<(String, u128)> = Vec::new();
+    walk_signature(&dir, "", &mut entries);
+    entries.sort();
+    Ok(Some(
+        entries
+            .iter()
+            .map(|(p, t)| format!("{p}@{t}"))
+            .collect::<Vec<_>>()
+            .join("|"),
+    ))
+}

@@ -48,7 +48,19 @@ import {
   supportsFileSystem,
   useLocalStorageFallback,
   type ProjectSummary,
+  type StorageAdapter,
 } from '../lib/storage'
+
+/* 桌面版的存储层。装在 Tauri 壳里时它会接管「选文件夹」和读写磁盘；
+   在浏览器里 isTauri() 是 false，这些函数一个都不会被调用。 */
+import {
+  TauriStorage,
+  forgetRoot,
+  isTauri,
+  pickLibraryFolder,
+  rememberRoot,
+  restoreTauriStorage,
+} from '../lib/storage-tauri'
 
 /** 持久化位置。界面要显示「存在哪」，所以它是状态的一部分。 */
 export type StorageMode = 'localStorage' | 'filesystem'
@@ -279,7 +291,7 @@ export const useStore = create<State>((set, get) => {
       summaries,
       novel,
       index: novel ? reindex(novel) : null,
-      storageMode: store.kind === 'filesystem' ? 'filesystem' : 'localStorage',
+      storageMode: store.kind === 'localStorage' ? 'localStorage' : 'filesystem',
       rootName: store.rootName,
       pendingRoot: null,
       selectedId: null,
@@ -301,15 +313,42 @@ export const useStore = create<State>((set, get) => {
     storageMode: 'localStorage',
     rootName: null,
     pendingRoot: null,
-    canUseFilesystem: supportsFileSystem(),
+    canUseFilesystem: supportsFileSystem() || isTauri(),
     diskChange: null,
     saveState: { kind: 'idle' },
 
     init: async () => {
-      // 先看有没有上次用过的文件夹。有就提示用户点一下继续，
-      // 因为浏览器不允许在用户手势之外重新授权。
-      const lastRoot = await FileStorage.hasSaved().catch(() => null)
-      if (lastRoot) set({ pendingRoot: lastRoot })
+      /* ── 桌面版先走这条路 ──
+         桌面版手里有真实路径，不需要用户每次点一下授权，
+         所以能直接接着上次的小说库开。这是它比浏览器版省事的地方。
+         只有一种情况不切过去：那个文件夹不见了、或者里面已经空了。
+         那时候宁可停在内部存储上 —— 换成空列表会让人以为稿子没了。 */
+      if (isTauri()) {
+        const restored = restoreTauriStorage()
+        if (restored) {
+          const summaries = await restored.listProjects().catch(() => [])
+          if (summaries.length > 0) {
+            setStorage(restored)
+            const first = await restored.read(summaries[0].id).catch(() => null)
+            const adopted = first ? adopt(first) : null
+            set({
+              novel: adopted?.novel ?? null,
+              index: adopted?.index ?? null,
+              summaries,
+              storageMode: 'filesystem',
+              rootName: restored.rootName,
+              ready: true,
+            })
+            if (adopted?.migratedTerms) scheduleSave(1200)
+            return
+          }
+        }
+      } else {
+        // 先看有没有上次用过的文件夹。有就提示用户点一下继续，
+        // 因为浏览器不允许在用户手势之外重新授权。
+        const lastRoot = await FileStorage.hasSaved().catch(() => null)
+        if (lastRoot) set({ pendingRoot: lastRoot })
+      }
 
       const store = getStorage()
       const summaries = await store.listProjects()
@@ -591,18 +630,29 @@ export const useStore = create<State>((set, get) => {
       const editing = get().novel
       if (editing) await current.write(editing).catch(() => undefined)
 
-      const next = await FileStorage.pick().catch((err: unknown) => {
-        // 用户取消选择也会走到这里，不该当成错误
-        if ((err as { name?: string })?.name === 'AbortError') return null
-        throw err
-      })
+      /* 桌面版和浏览器版走两个不同的对话框：
+         桌面版是系统自带的选文件夹窗口，选完就拿到真实路径、永久可用；
+         浏览器版是 File System Access API，权限每次启动都要重新点。 */
+      let next: StorageAdapter | null = null
+      if (isTauri()) {
+        next = await pickLibraryFolder()
+      } else {
+        next = await FileStorage.pick().catch((err: unknown) => {
+          // 用户取消选择也会走到这里，不该当成错误
+          if ((err as { name?: string })?.name === 'AbortError') return null
+          throw err
+        })
+      }
       if (!next) return
 
-      // 把 localStorage 里的作品也搬过去，否则用户会以为自己的东西没了
+      // 把内部存储里的作品也搬过去，否则用户会以为自己的东西没了
       for (const s of await current.listProjects()) {
         const n = await current.read(s.id)
         if (n) await next.write(n).catch(() => undefined)
       }
+
+      // 桌面版把路径记下来，下次启动直接恢复，不用再选一次
+      if (next instanceof TauriStorage) rememberRoot(next.root)
 
       setStorage(next)
       await reloadAll()
@@ -625,6 +675,8 @@ export const useStore = create<State>((set, get) => {
     },
 
     disconnectFolder: () => {
+      // 桌面版要把记住的路径一起丢掉，否则下次启动又会自动跳回那个文件夹
+      if (isTauri()) forgetRoot()
       useLocalStorageFallback()
       void FileStorage.forget()
       diskBaseline = null
@@ -639,8 +691,9 @@ export const useStore = create<State>((set, get) => {
     checkDisk: async () => {
       const novel = get().novel
       const store = getStorage()
-      // 只有真实文件夹、且当前有打开的小说时才需要检测
-      if (!novel || !store.signatureOf || store.kind !== 'filesystem') return
+      // 只要这个后端能给出指纹、且当前有打开的小说，就值得检测。
+      // 不按 kind 写死：浏览器文件夹和桌面版的磁盘都能给指纹。
+      if (!novel || !store.signatureOf) return
       // 已经有待处理提示时不重复检测，避免提示堆叠
       if (get().diskChange) return
 
@@ -651,7 +704,9 @@ export const useStore = create<State>((set, get) => {
         set({
           diskChange: {
             at: Date.now(),
-            summary: '找不到小说库文件夹了，可能被移动或改名，也可能是浏览器收回了授权',
+            summary: isTauri()
+              ? '找不到小说库文件夹了，可能被移动、改名，或者被删掉了'
+              : '找不到小说库文件夹了，可能被移动或改名，也可能是浏览器收回了授权',
           },
         })
         return

@@ -9,7 +9,12 @@
 
 import { FolderOpen, HardDrives, WarningCircle, X } from '@phosphor-icons/react'
 import { useStore } from '../store/useNovel'
+import { isTauri } from '../lib/storage-tauri'
 import { useState } from 'react'
+
+/* 同一个界面装在两种壳里，说法必须跟着换：
+   装在桌面程序里时，用户面前没有「浏览器」，也不该被告知去换个浏览器。 */
+const DESKTOP = isTauri()
 
 export function StorageBar() {
   const mode = useStore((s) => s.storageMode)
@@ -37,8 +42,9 @@ export function StorageBar() {
 
   return (
     <div className="mb-6">
-      {/* 上次用过文件夹时的续用提示 */}
-      {pendingRoot && mode !== 'filesystem' && (
+      {/* 上次用过文件夹时的续用提示。只有浏览器需要它：
+          桌面版记得真实路径，启动就自己接上了，不用麻烦用户。 */}
+      {!DESKTOP && pendingRoot && mode !== 'filesystem' && (
         <div
           className="mb-3 flex items-center gap-3 rounded-[var(--radius-lg)] px-4 py-3"
           style={{
@@ -96,9 +102,11 @@ export function StorageBar() {
             </div>
           ) : (
             <div className="text-[11.5px]" style={{ color: 'var(--color-ink-faint)' }}>
-              {canUse
-                ? '当前暂存在浏览器里（关掉浏览器不会丢，但你看不到文件）。选一个文件夹，内容就变成能拷走、能编辑的纯文本。'
-                : '当前浏览器不支持文件夹写入（Firefox / Safari 尚未实现）。用 Edge 或 Chrome 打开即可启用。'}
+              {DESKTOP
+                ? '当前暂存在程序内部（关掉程序不会丢，但你看不到文件）。选一个文件夹，内容就变成能拷走、能编辑的纯文本。'
+                : canUse
+                  ? '当前暂存在浏览器里（关掉浏览器不会丢，但你看不到文件）。选一个文件夹，内容就变成能拷走、能编辑的纯文本。'
+                  : '当前浏览器不支持文件夹写入（Firefox / Safari 尚未实现）。用 Edge 或 Chrome 打开即可启用。'}
             </div>
           )}
         </div>
@@ -109,10 +117,10 @@ export function StorageBar() {
             className="btn btn-plain flex-none"
             disabled={busy}
             onClick={disconnectFolder}
-            title="切换回浏览器存储"
+            title={DESKTOP ? '切换回程序内部存储' : '切换回浏览器存储'}
           >
             <X size={12} />
-            换回浏览器存储
+            {DESKTOP ? '换回程序内部存储' : '换回浏览器存储'}
           </button>
         ) : (
           <button
