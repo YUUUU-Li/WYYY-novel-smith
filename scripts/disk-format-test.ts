@@ -16,7 +16,7 @@
    ============================================================ */
 
 import { safeFileName } from '../src/lib/frontmatter.ts'
-import { ENTITY_DIR, HISTORY_DIR, NOVELS_ROOT, novelToFiles } from '../src/lib/novelfs.ts'
+import { ENTITY_DIR, HISTORY_DIR, novelToFiles } from '../src/lib/novelfs.ts'
 import type { Entity, Novel, Project } from '../src/lib/types.ts'
 
 let failures = 0
@@ -34,7 +34,7 @@ function check(label: string, ok: boolean, detail = ''): void {
 
 console.log('\n[1] 路径常量')
 
-check('小说根目录名', NOVELS_ROOT === '小说', NOVELS_ROOT)
+// 现在没有容器层了：一个文件夹就是一部作品。作品目录名 = 用户选的文件夹
 check('历史目录名', HISTORY_DIR === '历史', HISTORY_DIR)
 check('角色目录名', ENTITY_DIR.character === '角色', ENTITY_DIR.character)
 check('地点目录名', ENTITY_DIR.location === '地点', ENTITY_DIR.location)
@@ -159,12 +159,12 @@ console.log('\n[4] 完整布局')
 
   const paths = novelToFiles(novel).map((f) => f.path)
   const expect = [
-    '小说/测试·之书/novel.json',
-    '小说/测试·之书/角色/林昭.md',
-    '小说/测试·之书/地点/北境·要塞.md',
-    '小说/测试·之书/事件/陷落.md',
-    '小说/测试·之书/大纲.json',
-    '小说/测试·之书/词条.json',
+    'novel.json',
+    '角色/林昭.md',
+    '地点/北境·要塞.md',
+    '事件/陷落.md',
+    '大纲.json',
+    '词条.json',
   ]
   for (const p of expect) {
     check(`产出路径 ${p}`, paths.includes(p), paths.join(' | '))

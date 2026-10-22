@@ -11,7 +11,6 @@ use std::fs;
 
 #[test]
 fn path_constants_match_the_typescript_side() {
-    assert_eq!(NOVELS_ROOT, "小说");
     assert_eq!(HISTORY_DIR, "历史");
     assert_eq!(META_FILE, "novel.json");
     assert_eq!(OUTLINE_FILE, "大纲.json");
@@ -149,13 +148,10 @@ fn civil_from_days_handles_known_dates() {
 }
 
 #[test]
-fn novel_dir_escapes_the_title() {
-    let root = Path::new("C:/库");
-    let p = novel_dir(root, "测试/之书");
-    // 书名里的斜杠必须被转义，否则会凭空多出一层目录
-    assert!(p.ends_with(Path::new(NOVELS_ROOT).join("测试·之书")));
-    let s = p.to_string_lossy();
-    assert!(!s.contains("测试/之书"), "标题没被转义: {}", s);
+fn novel_dir_is_the_folder_itself() {
+    // 「文件夹即作品」：选中的那一层就是作品，不再拼书名
+    let root = Path::new("C:/库/战国记");
+    assert_eq!(novel_dir(root, "随便什么标题"), root.to_path_buf());
 }
 
 #[test]
@@ -251,16 +247,17 @@ fn trim_history_keeps_the_newest() {
 }
 
 #[test]
-fn list_novel_folders_requires_meta_file() {
+fn list_novel_folders_is_empty_or_the_root_itself() {
     let tmp = std::env::temp_dir().join("novel-studio-test-folders");
     let _ = fs::remove_dir_all(&tmp);
-    let novels = tmp.join(NOVELS_ROOT);
-    fs::create_dir_all(novels.join("有元信息")).unwrap();
-    fs::create_dir_all(novels.join("没有元信息")).unwrap();
-    fs::write(novels.join("有元信息").join(META_FILE), "{}").unwrap();
+    fs::create_dir_all(&tmp).unwrap();
 
-    let got = list_novel_folders(&tmp);
-    assert_eq!(got, vec!["有元信息".to_string()]);
+    // 没有 novel.json：这个文件夹不是作品
+    assert!(list_novel_folders(&tmp).is_empty());
+
+    // 有 novel.json：它自己就是那部作品，用空字符串表示"就落在这一层"
+    fs::write(tmp.join(META_FILE), "{}").unwrap();
+    assert_eq!(list_novel_folders(&tmp), vec![String::new()]);
 
     let _ = fs::remove_dir_all(&tmp);
 }

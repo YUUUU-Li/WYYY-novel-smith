@@ -136,15 +136,12 @@ function buildLibrary(): { tree: FakeTree; novel: Novel } {
   }
   const novel: Novel = { project, entities: [entity], outline: [], terms: [] }
 
+  // 「文件夹即作品」：novel.json 和各类型目录直接在这一层
   const tree = dir({
-    小说: dir({
-      测试之书: dir({
-        'novel.json': file(JSON.stringify(project)),
-        '大纲.json': file('[]'),
-        '词条.json': file('[]'),
-        角色: dir({ '林昭.md': file('---\nid: c1\ntype: character\nname: 林昭\n---\n\n正文\n') }),
-      }),
-    }),
+    'novel.json': file(JSON.stringify(project)),
+    '大纲.json': file('[]'),
+    '词条.json': file('[]'),
+    角色: dir({ '林昭.md': file('---\nid: c1\ntype: character\nname: 林昭\n---\n\n正文\n') }),
   })
   return { tree, novel }
 }
@@ -159,27 +156,26 @@ console.log('\n[1] 指纹的稳定性')
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
 
-  const a = await s.signatureOf(novel)
-  const b = await s.signatureOf(novel)
+  const a = await s.signatureOf()
+  const b = await s.signatureOf()
   check('同样的目录连取两次指纹一致', a !== null && a === b)
 
   // 历史快照是我们自己每次保存都写的，必须排除，否则永远在误报
-  const novelDir = tree.get('小说') as FakeTree
-  const bookDir = novelDir.get('测试之书') as FakeTree
+  const bookDir = tree
   bookDir.set('历史', dir({ '2026-01-01T00-00-00.json': file('{"x":1}') }))
-  const c = await s.signatureOf(novel)
+  const c = await s.signatureOf()
   check('新增历史快照不改变指纹', a === c, `${a} vs ${c}`)
 
   // 编辑器留下的临时文件和隐藏文件
   bookDir.set('.storage.ts.tmpdir', dir({ 'x.tmp': file('junk') }))
   bookDir.set('林昭.md.tmp', file('junk'))
   bookDir.set('.DS_Store', file('junk'))
-  const d = await s.signatureOf(novel)
+  const d = await s.signatureOf()
   check('临时文件与隐藏文件不改变指纹', a === d, `${a} vs ${d}`)
 
   // 非 md/json 的杂项文件（比如你放进来的参考图）
   bookDir.set('参考图.png', file('binary'))
-  const e = await s.signatureOf(novel)
+  const e = await s.signatureOf()
   check('无关的图片文件不改变指纹', a === e)
 }
 
@@ -192,44 +188,41 @@ console.log('\n[2] 真实改动必须被检测到')
 {
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
-  const before = await s.signatureOf(novel)
+  const before = await s.signatureOf()
 
-  const novelDir = tree.get('小说') as FakeTree
-  const bookDir = novelDir.get('测试之书') as FakeTree
+  const bookDir = tree
   const chars = bookDir.get('角色') as FakeTree
   const f = chars.get('林昭.md') as FakeFile
   f.content += '\n外部加的一行\n'
   f.lastModified = ++clock
 
-  const after = await s.signatureOf(novel)
+  const after = await s.signatureOf()
   check('在外部编辑一个角色文件后指纹改变', before !== after)
 }
 
 {
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
-  const before = await s.signatureOf(novel)
+  const before = await s.signatureOf()
 
-  const novelDir = tree.get('小说') as FakeTree
-  const bookDir = novelDir.get('测试之书') as FakeTree
+  const bookDir = tree
   const chars = bookDir.get('角色') as FakeTree
   chars.set('苏无咎.md', file('---\nid: c2\ntype: character\nname: 苏无咎\n---\n'))
 
-  const after = await s.signatureOf(novel)
+  const after = await s.signatureOf()
   check('新增一个实体文件后指纹改变', before !== after)
 }
 
 {
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
-  const before = await s.signatureOf(novel)
+  const before = await s.signatureOf()
 
-  const novelDir = tree.get('小说') as FakeTree
-  const bookDir = novelDir.get('测试之书') as FakeTree
+  const bookDir = tree
   ;(bookDir.get('novel.json') as FakeFile).content = '{"id":"proj_x","title":"改了名"}'
   ;(bookDir.get('novel.json') as FakeFile).lastModified = ++clock
 
-  const after = await s.signatureOf(novel)
+  const after = await s.signatureOf()
   check('修改 novel.json 后指纹改变', before !== after)
 }
 
@@ -243,10 +236,9 @@ console.log('\n[3] 文件夹消失时的行为')
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
 
-  const novelDir = tree.get('小说') as FakeTree
-  novelDir.delete('测试之书') // 用户把文件夹改名或移走了
+  tree.delete('novel.json') // 作品文件夹被改名或移走了：这一层不再是作品
 
-  const sig = await s.signatureOf(novel).catch(() => 'THREW')
+  const sig = await s.signatureOf().catch(() => 'THREW')
   check('文件夹不存在时返回 null 而不是抛异常', sig === null, String(sig))
 }
 
@@ -361,8 +353,7 @@ console.log('\n[9] 条目改类型后的落盘清理')
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
 
-  const novelDir = tree.get('小说') as FakeTree
-  const bookDir = novelDir.get('测试之书') as FakeTree
+  const bookDir = tree
   const chars = bookDir.get('角色') as FakeTree
 
   check('改类型前，角色/ 下有文件', chars.has('林昭.md'))
@@ -391,7 +382,7 @@ console.log('\n[9] 条目改类型后的落盘清理')
   // 重命名实体（文件名会变）也必须清掉旧文件
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
-  const bookDir = (tree.get('小说') as FakeTree).get('测试之书') as FakeTree
+  const bookDir = tree
   const chars = bookDir.get('角色') as FakeTree
 
   const renamed: Novel = {
@@ -408,7 +399,7 @@ console.log('\n[9] 条目改类型后的落盘清理')
   // 删除实体后文件必须消失
   const { tree, novel } = buildLibrary()
   const s = storageOver(tree)
-  const bookDir = (tree.get('小说') as FakeTree).get('测试之书') as FakeTree
+  const bookDir = tree
   const chars = bookDir.get('角色') as FakeTree
 
   await s.write({ ...novel, entities: [] })

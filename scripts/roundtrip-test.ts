@@ -213,7 +213,7 @@ check('没有重复路径', new Set(paths).size === paths.length, paths.join(' |
 for (const [type, dir] of Object.entries(ENTITY_DIR)) {
   const expected = entities.filter((e) => e.type === type).length
   if (expected === 0) continue
-  const actual = files.filter((f) => f.path.includes(`/${dir}/`)).length
+  const actual = files.filter((f) => f.path.startsWith(`${dir}/`)).length
   check(`${dir}/ 下有 ${expected} 个文件`, actual === expected, `实际 ${actual}`)
 }
 

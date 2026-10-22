@@ -37,11 +37,16 @@ export const ENTITY_DIR: Record<EntityType, string> = {
   concept: '概念',
 }
 
-export const NOVELS_ROOT = '小说'
+
 export const META_FILE = 'novel.json'
 export const OUTLINE_FILE = '大纲.json'
 export const TERMS_FILE = '词条.json'
 export const HISTORY_DIR = '历史'
+
+/* 路径拼接：root 为空时不要留下开头的斜杠 */
+export function joinPath(root: string, name: string): string {
+  return root ? `${root}/${name}` : name
+}
 
 /** 文件名冲突时追加序号，保证同一目录下不会互相覆盖 */
 function uniqueName(base: string, used: Set<string>): string {
@@ -58,16 +63,16 @@ function uniqueName(base: string, used: Set<string>): string {
 
 /**
  * 把一份小说摊成「路径 → 内容」的列表。
- * root 是相对于小说库根目录的前缀，导出时可以换成书名的文件夹名。
+ * root 是前缀：作品文件夹本身时留空（默认），导出成 zip 时可以套一层书名。
  */
 export function novelToFiles(
   novel: Novel,
-  root = `${NOVELS_ROOT}/${safeFileName(novel.project.title)}`,
+  root = '',
 ): Array<{ path: string; content: string }> {
   const files: Array<{ path: string; content: string }> = []
 
   files.push({
-    path: `${root}/${META_FILE}`,
+    path: joinPath(root, META_FILE),
     content: JSON.stringify(novel.project, null, 2) + '\n',
   })
 
@@ -78,18 +83,18 @@ export function novelToFiles(
     const used = new Set<string>()
     for (const e of list) {
       files.push({
-        path: `${root}/${dir}/${uniqueName(e.name, used)}`,
+        path: joinPath(root, `${dir}/${uniqueName(e.name, used)}`),
         content: serializeEntity(e),
       })
     }
   }
 
   files.push({
-    path: `${root}/${OUTLINE_FILE}`,
+    path: joinPath(root, OUTLINE_FILE),
     content: JSON.stringify(novel.outline, null, 2) + '\n',
   })
   files.push({
-    path: `${root}/${TERMS_FILE}`,
+    path: joinPath(root, TERMS_FILE),
     content: JSON.stringify(novel.terms, null, 2) + '\n',
   })
 

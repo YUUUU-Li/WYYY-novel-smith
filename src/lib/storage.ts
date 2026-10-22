@@ -23,7 +23,8 @@ import {
   ENTITY_DIR,
   HISTORY_DIR,
   META_FILE,
-  NOVELS_ROOT,
+  OUTLINE_FILE,
+  TERMS_FILE,
   novelFromDir,
   novelToFiles,
 } from './novelfs'
@@ -31,10 +32,8 @@ import { safeFileName } from './frontmatter'
 
 const LS_PREFIX = 'novel-studio:'
 const LS_INDEX = `${LS_PREFIX}projects`
-const LS_ROOT = `${LS_PREFIX}fs-root`
 const IDB_NAME = 'novel-studio'
 const IDB_STORE = 'handles'
-const IDB_KEY = 'library-root'
 
 const novelKey = (id: string) => `${LS_PREFIX}novel:${id}`
 
@@ -153,7 +152,7 @@ function idbOpen(): Promise<IDBDatabase> {
   })
 }
 
-async function idbSet(key: string, value: unknown): Promise<void> {
+export async function idbSet(key: string, value: unknown): Promise<void> {
   const db = await idbOpen()
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite')
@@ -164,7 +163,7 @@ async function idbSet(key: string, value: unknown): Promise<void> {
   db.close()
 }
 
-async function idbGet<T>(key: string): Promise<T | null> {
+export async function idbGet<T>(key: string): Promise<T | null> {
   const db = await idbOpen()
   const out = await new Promise<T | null>((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readonly')
@@ -177,6 +176,11 @@ async function idbGet<T>(key: string): Promise<T | null> {
 }
 
 /** 支持文件夹持久化的浏览器才有这个 API */
+/** 给作品注册表用的薄封装：句柄进出 IndexedDB */
+export async function getHandle<T>(key: string): Promise<T | null> {
+  return await idbGet<T>(key)
+}
+
 export function supportsFileSystem(): boolean {
   return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
 }
@@ -190,71 +194,38 @@ export class FileStorage implements StorageAdapter {
     return this.root.name
   }
 
-  /** 让用户选一个小说库文件夹 */
-  static async pick(): Promise<FileStorage | null> {
-    if (!supportsFileSystem()) return null
-    const handle = await window.showDirectoryPicker!({
-      id: 'novel-studio-library',
-      mode: 'readwrite',
-      startIn: 'documents',
-    })
-    await idbSet(IDB_KEY, handle)
+  /** 从作品注册表拿到的句柄直接包起来用 */
+  static wrap(handle: FileSystemDirectoryHandle): FileStorage {
     return new FileStorage(handle)
   }
 
-  /** 尝试恢复上次选的文件夹。返回 null 表示需要用户重新授权。 */
-  static async restore(): Promise<FileStorage | null> {
-    const handle = await idbGet<FileSystemDirectoryHandle>(IDB_KEY)
-    if (!handle) return null
-    const perm = (await handle.queryPermission?.({ mode: 'readwrite' })) ?? 'prompt'
-    if (perm === 'granted') return new FileStorage(handle)
-    // 不静默请求权限：浏览器要求必须由用户手势触发
-    localStorage.setItem(LS_ROOT, handle.name)
-    return null
+  /** 让用户选一个文件夹当「这部作品」的家 */
+  static async pick(): Promise<FileStorage | null> {
+    if (!supportsFileSystem()) return null
+    const handle = await window.showDirectoryPicker!({
+      id: 'novel-studio-work',
+      mode: 'readwrite',
+      startIn: 'documents',
+    })
+    return new FileStorage(handle)
   }
 
-  /** 重新请求权限。必须在用户点击事件里调用。 */
-  static async reauthorize(): Promise<FileStorage | null> {
-    const handle = await idbGet<FileSystemDirectoryHandle>(IDB_KEY)
-    if (!handle) return null
-    const perm = await handle.requestPermission?.({ mode: 'readwrite' })
-    if (perm === 'granted') return new FileStorage(handle)
-    return null
-  }
-
-  static async hasSaved(): Promise<string | null> {
-    const handle = await idbGet<FileSystemDirectoryHandle>(IDB_KEY)
-    return handle ? handle.name : null
-  }
-
-  /**
-   * 这个文件夹本身是不是「某一部作品」——根上有没有 novel.json。
-   *
-   * 为什么需要：小说库的结构是 `<根>/小说/<作品名>/`。如果用户把「小说库」
-   * 选成了某部作品自己那一层，之后新建的作品就会嵌进前一部作品里
-   * （`小说/战国记/小说/新作品`），文件看起来就像"所有作品挤在一个文件夹"。
-   * 选之前拦一下，比事后让人去搬文件好得多。
-   */
+  /** 这个文件夹里有没有 novel.json —— 有就说明它本身是一部作品 */
   async hasNovelJson(): Promise<boolean> {
     try {
-      await this.root.getFileHandle('novel.json')
+      await this.root.getFileHandle(META_FILE)
       return true
     } catch {
       return false
     }
   }
 
-  /** 上一次用过文件夹的名字，用于界面提示 */
-  static lastRootName(): string | null {
-    return localStorage.getItem(LS_ROOT)
+  /** 把句柄交出去给注册表存 */
+  get handle(): FileSystemDirectoryHandle {
+    return this.root
   }
 
-  static async forget(): Promise<void> {
-    await idbSet(IDB_KEY, null)
-    localStorage.removeItem(LS_ROOT)
-  }
-
-  /* ---------- 路径操作 ---------- */
+  /* ---------- 路径操作（相对作品文件夹） ---------- */
 
   private async dirFor(path: string, create: boolean): Promise<FileSystemDirectoryHandle> {
     let dir = this.root
@@ -274,31 +245,6 @@ export class FileStorage implements StorageAdapter {
     await w.close()
   }
 
-  private async readFile(path: string): Promise<string | null> {
-    try {
-      const parts = path.split('/')
-      const fileName = parts.pop()!
-      const dir = await this.dirFor(parts.join('/'), false)
-      const fh = await dir.getFileHandle(fileName)
-      return await (await fh.getFile()).text()
-    } catch {
-      return null
-    }
-  }
-
-  private async dirNames(path: string): Promise<string[]> {
-    try {
-      const dir = await this.dirFor(path, false)
-      const out: string[] = []
-      for await (const entry of dir.values()) {
-        if (entry.kind === 'directory') out.push(entry.name)
-      }
-      return out
-    } catch {
-      return []
-    }
-  }
-
   private async fileNames(path: string): Promise<string[]> {
     try {
       const dir = await this.dirFor(path, false)
@@ -312,139 +258,87 @@ export class FileStorage implements StorageAdapter {
     }
   }
 
-  private folderOf(novel: Novel): string {
-    return `${NOVELS_ROOT}/${safeFileName(novel.project.title)}`
-  }
-
   /* ---------- 外部改动检测 ---------- */
 
   /**
-   * 计算一个小说文件夹的指纹：全部文件的路径 + 修改时间。
+   * 指纹：全部文件的「路径 + 修改时间」。
    *
-   * 为什么用指纹而不是直接比对内容：
-   * 每隔几秒把几百个文件读一遍是浪费。指纹只看元信息，很便宜；
-   * 只有指纹变了才值得去读内容。
-   *
-   * 刻意排除 历史/ 目录：那是我们自己每次保存都写的快照，
-   * 把它算进指纹会导致每秒都判定为「被外部改过」，永远在误报。
-   * 同理排除编辑器留下的临时文件和隐藏文件。
+   * 只看元信息不看内容 —— 几百个文件读一遍内容太贵，而这里只需要判断
+   * "有没有人动过"。排除 历史/（每次保存都写，算进去会永远误报）、
+   * 隐藏文件和 .tmp。
    */
-  async signature(folder: string): Promise<string | null> {
+  async signature(): Promise<string | null> {
+    // 这一层里没有 novel.json 就不再是作品了（被改名/移走/清空）
+    if (!(await this.hasNovelJson())) return null
     try {
       const entries: Array<[string, number]> = []
 
-      const walk = async (dir: string, prefix: string): Promise<void> => {
-        const handle = await this.dirFor(dir, false)
+      const walk = async (path: string, prefix: string): Promise<void> => {
+        const handle = await this.dirFor(path, false)
         for await (const entry of handle.values()) {
           const name = entry.name
           if (name.startsWith('.')) continue
           if (name.endsWith('.tmp')) continue
-          const path = prefix ? `${prefix}/${name}` : name
+          const rel = prefix ? `${prefix}/${name}` : name
           if (entry.kind === 'directory') {
-            if (entry.name === HISTORY_DIR) continue
-            await walk(`${dir}/${name}`, path)
+            if (name === HISTORY_DIR) continue
+            await walk(path ? `${path}/${name}` : name, rel)
             continue
           }
           if (!/\.(md|json)$/i.test(name)) continue
           const fh = await handle.getFileHandle(name)
-          const file = await fh.getFile()
-          entries.push([path, file.lastModified])
+          entries.push([rel, (await fh.getFile()).lastModified])
         }
       }
 
-      await walk(folder, '')
+      await walk('', '')
       entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-      return entries.map(([p, t]) => `${p}@${t}`).join('|')
+      return entries.map(([p2, t]) => `${p2}@${t}`).join('|')
     } catch {
-      // 文件夹被移走或权限失效时返回 null，调用方据此提示用户
+      // 文件夹被移走或权限失效：返回 null，调用方据此提示作者
       return null
     }
   }
 
-  /** 列表里每个项目对应的文件夹名，界面和检测都用得上 */
-  async folderOfId(id: string): Promise<string | null> {
-    for (const folder of await this.dirNames(NOVELS_ROOT)) {
-      const meta = await this.readFile(`${NOVELS_ROOT}/${folder}/${META_FILE}`)
-      if (!meta) continue
-      try {
-        if ((JSON.parse(meta) as Novel['project']).id === id) return folder
-      } catch {
-        continue
-      }
-    }
-    return null
-  }
-
   /* ---------- 接口实现 ---------- */
 
+  /** 一个文件夹只有一部作品，所以列表最多一条 */
   async listProjects(): Promise<ProjectSummary[]> {
-    const out: ProjectSummary[] = []
-    for (const folder of await this.dirNames(NOVELS_ROOT)) {
-      const meta = await this.readFile(`${NOVELS_ROOT}/${folder}/${META_FILE}`)
-      if (!meta) continue
-      try {
-        const project = JSON.parse(meta) as Novel['project']
-        // 实体数量要真数一遍，因为用户可能手改过文件夹
-        let entityCount = 0
-        for (const dirName of Object.values(ENTITY_DIR)) {
-          entityCount += (await this.fileNames(`${NOVELS_ROOT}/${folder}/${dirName}`)).filter((n) =>
-            n.toLowerCase().endsWith('.md'),
-          ).length
-        }
-        out.push({
-          id: project.id,
-          title: project.title,
-          logline: project.logline,
-          updatedAt: project.updatedAt ?? 0,
-          entityCount,
-        })
-      } catch {
-        // 读不出来的文件夹跳过，但不要让它拖垮整个列表
-        continue
-      }
-    }
-    // 文件夹名可能被用户改过，所以按更新时间排序而不是按名字
-    return out.sort((a, b) => b.updatedAt - a.updatedAt)
+    const novel = await this.readSelf()
+    if (!novel) return []
+    return [toSummary(novel)]
   }
 
-  async read(id: string): Promise<Novel | null> {
-    for (const folder of await this.dirNames(NOVELS_ROOT)) {
-      const meta = await this.readFile(`${NOVELS_ROOT}/${folder}/${META_FILE}`)
-      if (!meta) continue
-      try {
-        const project = JSON.parse(meta) as Novel['project']
-        if (project.id !== id) continue
-        const root = await this.dirFor(`${NOVELS_ROOT}/${folder}`, false)
-        return await novelFromDir(root as never)
-      } catch {
-        continue
-      }
+  private async readSelf(): Promise<Novel | null> {
+    try {
+      return await novelFromDir(this.root as never)
+    } catch {
+      return null
     }
-    return null
+  }
+
+  async read(_id: string): Promise<Novel | null> {
+    return this.readSelf()
   }
 
   /**
    * 写回。先写全部文件，再删掉已经不存在的实体文件。
-   * 不做增量更新：整份写回在文件系统上是最简单也最不容易写坏的模型，
-   * 而「文件数量」在这个体量下根本不是瓶颈（几百个文件，几十毫秒）。
+   * 不做增量更新：整份写回在文件系统上是最简单也最不容易写坏的模型。
    */
   async write(novel: Novel): Promise<void> {
-    const folder = this.folderOf(novel)
-    const files = novelToFiles(novel, folder)
+    const files = novelToFiles(novel)
 
     for (const f of files) {
       await this.writeFile(f.path, f.content)
     }
 
     // 清理重命名或删除后留下的孤儿文件
-    const keep = new Set(
-      files.map((f) => f.path.slice(folder.length + 1)),
-    )
+    const keep = new Set(files.map((f) => f.path))
     for (const dirName of Object.values(ENTITY_DIR)) {
-      for (const name of await this.fileNames(`${folder}/${dirName}`)) {
+      for (const name of await this.fileNames(dirName)) {
         if (!keep.has(`${dirName}/${name}`)) {
           try {
-            const dir = await this.dirFor(`${folder}/${dirName}`, false)
+            const dir = await this.dirFor(dirName, false)
             await dir.removeEntry(name)
           } catch {
             // 删不掉就算了，不值得让保存失败
@@ -453,19 +347,34 @@ export class FileStorage implements StorageAdapter {
       }
     }
 
-    await this.snapshot(novel, folder).catch(() => undefined)
+    await this.snapshot(novel).catch(() => undefined)
   }
 
-  async remove(id: string): Promise<void> {
-    for (const folder of await this.dirNames(NOVELS_ROOT)) {
-      const meta = await this.readFile(`${NOVELS_ROOT}/${folder}/${META_FILE}`)
-      if (!meta) continue
+  /** 删掉这部作品的正文文件（文件夹本身留着，也不会碰别的目录） */
+  async remove(_id: string): Promise<void> {
+    for (const dirName of Object.values(ENTITY_DIR)) {
+      for (const name of await this.fileNames(dirName)) {
+        try {
+          const dir = await this.dirFor(dirName, false)
+          await dir.removeEntry(name)
+        } catch {
+          // 同上
+        }
+      }
+    }
+    for (const name of [META_FILE, OUTLINE_FILE, TERMS_FILE]) {
       try {
-        if ((JSON.parse(meta) as Novel['project']).id !== id) continue
-        const root = await this.dirFor(NOVELS_ROOT, false)
-        await root.removeEntry(folder, { recursive: true })
+        await this.root.removeEntry(name)
       } catch {
-        continue
+        // 本来就没有
+      }
+    }
+    for (const name of await this.fileNames(HISTORY_DIR)) {
+      try {
+        const dir = await this.dirFor(HISTORY_DIR, false)
+        await dir.removeEntry(name)
+      } catch {
+        // 同上
       }
     }
   }
@@ -474,26 +383,20 @@ export class FileStorage implements StorageAdapter {
     return novelToFiles(novel)
   }
 
-  /** 按项目 id 找到它的文件夹并取指纹 */
-  async signatureOf(novel: Novel): Promise<string | null> {
-    const folder = await this.folderOfId(novel.project.id)
-    if (!folder) return null
-    return this.signature(`${NOVELS_ROOT}/${folder}`)
+  async signatureOf(): Promise<string | null> {
+    return this.signature()
   }
 
   /* ---------- 版本快照 ---------- */
 
   /**
-   * 每次保存留一份快照，文件名是时间戳。
-   * 这不是 Git，是「出事了能翻回去」的保底。
-   * 真正的 Git 历史等套 Tauri 壳之后交给 Rust 侧的 git2 做，
-   * 那样才是逐行 diff 的正确形态。
+   * 每次保存留一份快照。这不是 Git，是「出事了能翻回去」的保底。
    * 为了不让文件夹无限膨胀，只保留最近 60 份。
    */
-  private async snapshot(novel: Novel, folder: string): Promise<void> {
+  private async snapshot(novel: Novel): Promise<void> {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     await this.writeFile(
-      `${folder}/${HISTORY_DIR}/${stamp}.json`,
+      `${HISTORY_DIR}/${stamp}.json`,
       JSON.stringify(
         {
           savedAt: new Date().toISOString(),
@@ -505,15 +408,16 @@ export class FileStorage implements StorageAdapter {
         2,
       ),
     )
-    const names = (await this.fileNames(`${folder}/${HISTORY_DIR}`)).sort()
+    const names = (await this.fileNames(HISTORY_DIR)).sort()
     if (names.length > 60) {
-      const dir = await this.dirFor(`${folder}/${HISTORY_DIR}`, false)
+      const dir = await this.dirFor(HISTORY_DIR, false)
       for (const old of names.slice(0, names.length - 60)) {
         await dir.removeEntry(old).catch(() => undefined)
       }
     }
   }
 }
+
 
 /* ============================================================
    当前生效的适配器

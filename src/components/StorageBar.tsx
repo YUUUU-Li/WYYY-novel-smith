@@ -1,29 +1,27 @@
 /* ============================================================
-   存储位置指示条
+   这部作品存在哪
 
-   为什么这个要放在作品库最显眼的位置：
-   「我的东西到底存在哪」是这类工具最该被回答的问题。
-   藏在设置里的存储位置，等于让用户提心吊胆。
-   所以它是一个常驻的条，说清楚当前存在哪、怎么切成文件夹。
+   「文件夹即作品」之后，这条要回答的问题变了：
+   以前是"整个小说库存在哪"（一个根目录装很多作品），现在是
+   "**这部作品**存在哪个文件夹" —— 所以文案要从"库"改成"作品"。
+
+   顺带承担另一个入口：「打开作品文件夹…」。别人的作品、以前的备份、
+   从网盘拷回来的东西，都是指一下文件夹就开始用。
    ============================================================ */
 
-import { FolderOpen, HardDrives, WarningCircle, X } from '@phosphor-icons/react'
+import { FolderOpen, HardDrives, WarningCircle } from '@phosphor-icons/react'
 import { useStore } from '../store/useNovel'
+import { supportsFileSystem } from '../lib/storage'
 import { isTauri } from '../lib/storage-tauri'
 import { useState } from 'react'
 
-/* 同一个界面装在两种壳里，说法必须跟着换：
-   装在桌面程序里时，用户面前没有「浏览器」，也不该被告知去换个浏览器。 */
 const DESKTOP = isTauri()
+const CAN_PICK = DESKTOP || supportsFileSystem()
 
 export function StorageBar() {
   const mode = useStore((s) => s.storageMode)
   const rootName = useStore((s) => s.rootName)
-  const pendingRoot = useStore((s) => s.pendingRoot)
-  const canUse = useStore((s) => s.canUseFilesystem)
-  const chooseFolder = useStore((s) => s.chooseFolder)
-  const resumeFolder = useStore((s) => s.resumeFolder)
-  const disconnectFolder = useStore((s) => s.disconnectFolder)
+  const openWorkFolder = useStore((s) => s.openWorkFolder)
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -42,39 +40,6 @@ export function StorageBar() {
 
   return (
     <div className="mb-6">
-      {/* 上次用过文件夹时的续用提示。只有浏览器需要它：
-          桌面版记得真实路径，启动就自己接上了，不用麻烦用户。 */}
-      {!DESKTOP && pendingRoot && mode !== 'filesystem' && (
-        <div
-          className="mb-3 flex items-center gap-3 rounded-[var(--radius-lg)] px-4 py-3"
-          style={{
-            background: 'color-mix(in oklab, var(--color-accent) 8%, transparent)',
-            border: '1px solid color-mix(in oklab, var(--color-accent) 26%, transparent)',
-          }}
-        >
-          <WarningCircle size={15} style={{ color: 'var(--color-accent)' }} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-medium">
-              继续使用上次的小说库文件夹「{pendingRoot}」
-            </div>
-            <div
-              className="mt-0.5 text-[11px] leading-relaxed"
-              style={{ color: 'var(--color-ink-soft)' }}
-            >
-              浏览器不允许程序自己重新打开你的文件夹，所以需要你点一下授权。这是浏览器的安全限制。
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary flex-none"
-            disabled={busy}
-            onClick={() => void run(resumeFolder)}
-          >
-            {busy ? '授权中…' : '继续使用'}
-          </button>
-        </div>
-      )}
-
       <div
         className="flex flex-wrap items-center gap-3 rounded-[var(--radius-lg)] px-4 py-2.5"
         style={{
@@ -93,55 +58,42 @@ export function StorageBar() {
         <div className="min-w-0 flex-1">
           {mode === 'filesystem' ? (
             <div className="text-[11.5px]">
-              <span style={{ color: 'var(--color-ink-faint)' }}>小说库根目录：</span>
+              <span style={{ color: 'var(--color-ink-faint)' }}>这部作品保存在文件夹：</span>
               <span style={{ color: 'var(--color-accent)' }}>{rootName}</span>
               <span style={{ color: 'var(--color-ink-faint)' }}>
                 {' '}
-                · 每部作品在这下面各自一个文件夹，条目是单独的 Markdown 文件，可以直接用记事本打开
+                · 一个文件夹就是一部作品，拷走它就是备份；每个条目是单独的 Markdown 文件
               </span>
             </div>
           ) : (
             <div className="text-[11.5px]" style={{ color: 'var(--color-ink-faint)' }}>
-              {DESKTOP
-                ? '当前暂存在程序内部（关掉程序不会丢，但你看不到文件）。选一个文件夹，内容就变成能拷走、能编辑的纯文本。'
-                : canUse
-                  ? '当前暂存在浏览器里（关掉浏览器不会丢，但你看不到文件）。选一个文件夹，内容就变成能拷走、能编辑的纯文本。'
-                  : '当前浏览器不支持文件夹写入（Firefox / Safari 尚未实现）。用 Edge 或 Chrome 打开即可启用。'}
+              {CAN_PICK
+                ? '这部作品暂时存在程序内部（关掉程序不会丢，但你看不到文件）。新建作品时会让你选一个文件夹，那之后它就是纯文本。'
+                : '这个浏览器不支持文件夹访问（Firefox / Safari 尚未实现）。用 Edge / Chrome，或者用桌面版。'}
             </div>
           )}
         </div>
 
-        {mode === 'filesystem' ? (
-          <button
-            type="button"
-            className="btn btn-plain flex-none"
-            disabled={busy}
-            onClick={disconnectFolder}
-            title={DESKTOP ? '切换回程序内部存储' : '切换回浏览器存储'}
-          >
-            <X size={12} />
-            {DESKTOP ? '换回程序内部存储' : '换回浏览器存储'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-ghost flex-none"
-            disabled={busy || !canUse}
-            onClick={() => void run(chooseFolder)}
-          >
-            <FolderOpen size={13} />
-            {busy ? '处理中…' : '选择小说库文件夹'}
-          </button>
-        )}
+        <button
+          type="button"
+          className="btn btn-ghost flex-none"
+          disabled={busy || !CAN_PICK}
+          onClick={() => void run(openWorkFolder)}
+          title="选一个已经存在的作品文件夹（里面有 novel.json），登记进作品库并打开"
+        >
+          <FolderOpen size={13} />
+          {busy ? '处理中…' : '打开作品文件夹'}
+        </button>
       </div>
 
       {err && (
         <div
-          className="mt-2 text-[11.5px]"
+          className="mt-2 flex items-start gap-2 text-[11.5px]"
           style={{ color: 'var(--color-danger)' }}
           role="alert"
         >
-          {err}
+          <WarningCircle size={14} className="mt-0.5 flex-none" />
+          <span>{err}</span>
         </div>
       )}
     </div>

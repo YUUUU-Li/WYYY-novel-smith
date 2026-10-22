@@ -271,7 +271,7 @@ function DiskChangeBanner() {
   const applyDiskVersion = useStore((s) => s.applyDiskVersion)
   const keepMemoryVersion = useStore((s) => s.keepMemoryVersion)
   const dismissDiskChange = useStore((s) => s.dismissDiskChange)
-  const chooseFolder = useStore((s) => s.chooseFolder)
+  const openWorkFolder = useStore((s) => s.openWorkFolder)
 
   if (!diskChange) return null
 
@@ -313,9 +313,9 @@ function DiskChangeBanner() {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => void chooseFolder()}
+            onClick={() => void openWorkFolder().catch(() => undefined)}
           >
-            重新选择文件夹
+            打开原来的文件夹
           </button>
         ) : (
           <>

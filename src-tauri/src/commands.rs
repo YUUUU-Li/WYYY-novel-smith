@@ -53,7 +53,7 @@ pub struct RawEntity {
 /// 文件夹名可能被用户改过，所以只能逐个读 novel.json 比对 id。
 fn find_folder_by_id(root: &std::path::Path, id: &str) -> Option<PathBuf> {
     for folder in list_novel_folders(root) {
-        let dir = root.join(NOVELS_ROOT).join(&folder);
+        let dir: PathBuf = if folder.is_empty() { root.to_path_buf() } else { root.join(&folder) };
         if let Some((found_id, _, _, _)) = read_meta(&dir) {
             if found_id == id {
                 return Some(dir);
@@ -70,7 +70,7 @@ pub fn list_projects(root: String) -> Result<Vec<NovelSummary>, String> {
     let mut out = Vec::new();
 
     for folder in list_novel_folders(&root) {
-        let dir = root.join(NOVELS_ROOT).join(&folder);
+        let dir: PathBuf = if folder.is_empty() { root.to_path_buf() } else { root.join(&folder) };
         let (id, title, logline, updated) = match read_meta(&dir) {
             Some(m) => m,
             None => continue,

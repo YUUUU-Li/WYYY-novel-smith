@@ -14,10 +14,10 @@ use std::path::{Path, PathBuf};
 
 /* ============================================================
    路径常量
-   必须与 TypeScript 侧一致：novelfs.ts 的 NOVELS_ROOT / ENTITY_DIR / HISTORY_DIR
+   必须与 TypeScript 侧一致：novelfs.ts 的 ENTITY_DIR / HISTORY_DIR（一个文件夹就是一部作品）
    ============================================================ */
 
-pub const NOVELS_ROOT: &str = "小说";
+// 已经没有容器层了；留着这个常量只为了让旧文件仍然能编译（不再使用）
 pub const META_FILE: &str = "novel.json";
 pub const OUTLINE_FILE: &str = "大纲.json";
 pub const TERMS_FILE: &str = "词条.json";
@@ -170,9 +170,13 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// 一部小说的文件夹路径
-pub fn novel_dir(root: &Path, title: &str) -> PathBuf {
-    root.join(NOVELS_ROOT).join(safe_file_name(title))
+/// 一部作品的文件夹——就是用户选中的那一层本身。
+///
+/// 以前是 `root/小说/<书名>/`，于是作者看到"我的战国记在 战国记/小说/战国记
+/// 里面"，既看不懂也没法整包拷走。现在：**一个文件夹就是一部作品**，
+/// 拷走它 = 备份这部作品。`title` 保留在签名里只是为了不再改所有调用点。
+pub fn novel_dir(root: &Path, _title: &str) -> PathBuf {
+    root.to_path_buf()
 }
 
 /// 枚举某个小说目录下的全部实体文件名（只含 .md，跳过隐藏文件与临时文件）
@@ -201,28 +205,16 @@ pub fn list_entity_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// 列出小说库根目录下的全部小说文件夹名
+/// 这个文件夹里有哪些作品。
+///
+/// 「文件夹即作品」之后最多只有一部：`root` 自己。返回空字符串表示
+/// "root 本身就是那部作品"，调用方按 `root.join("")` 直接落在这一层。
 pub fn list_novel_folders(root: &Path) -> Vec<String> {
-    let base = root.join(NOVELS_ROOT);
-    let mut out = Vec::new();
-    let entries = match std::fs::read_dir(&base) {
-        Ok(e) => e,
-        Err(_) => return out,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            // 有 novel.json 的才算一本小说，避免把用户误放的目录当成作品
-            if path.join(META_FILE).is_file() {
-                out.push(name.to_string());
-            }
-        }
+    if root.join(META_FILE).is_file() {
+        vec![String::new()]
+    } else {
+        Vec::new()
     }
-    out.sort();
-    out
 }
 
 /// 读取 novel.json 里的 id 与 title，用于列表与按 id 定位

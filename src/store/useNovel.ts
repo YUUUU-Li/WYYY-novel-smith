@@ -44,6 +44,7 @@ import { UndoStack } from '../lib/undo-stack'
 
 import {
   FileStorage,
+  LocalStorageAdapter,
   getStorage,
   setStorage,
   supportsFileSystem,
@@ -52,15 +53,24 @@ import {
   type StorageAdapter,
 } from '../lib/storage'
 
+/* 作品注册表：一个文件夹就是一部作品，列表来自这里 + 内部存储。 */
+import {
+  clearHandle,
+  dropWork,
+  loadHandle,
+  loadWorks,
+  stashHandle,
+  upsertWork,
+} from '../lib/works'
+
 /* 桌面版的存储层。装在 Tauri 壳里时它会接管「选文件夹」和读写磁盘；
    在浏览器里 isTauri() 是 false，这些函数一个都不会被调用。 */
 import {
   TauriStorage,
-  forgetRoot,
+
   isTauri,
   pickLibraryFolder,
   rememberRoot,
-  restoreTauriStorage,
 } from '../lib/storage-tauri'
 
 /** 持久化位置。界面要显示「存在哪」，所以它是状态的一部分。 */
@@ -92,8 +102,6 @@ interface State {
   /** 当前存在哪。filesystem 时 rootName 是文件夹名。 */
   storageMode: StorageMode
   rootName: string | null
-  /** 上次用过但需要重新授权的文件夹名（浏览器安全边界） */
-  pendingRoot: string | null
   canUseFilesystem: boolean
 
   /**
@@ -133,10 +141,8 @@ interface State {
   deleteProject: (id: string) => Promise<void>
   backToLibrary: () => void
 
-  chooseFolder: () => Promise<void>
-  resumeFolder: () => Promise<void>
-  disconnectFolder: () => void
-
+  /** 打开一个已经存在的作品文件夹，登记进作品库并进入 */
+  openWorkFolder: () => Promise<void>
   /** 轮询入口：指纹变了就去看内容，内容真变了才提示 */
   checkDisk: () => Promise<void>
   /** 接受磁盘版本：丢弃内存改动，重新加载 */
@@ -325,34 +331,33 @@ export const useStore = create<State>((set, get) => {
       async () => {
         // 先更新基线再列项目：基线必须在磁盘状态稳定之后取
         await refreshBaseline(n)
-        set({ summaries: await store.listProjects() })
+        set({ summaries: await refreshSummaries() })
       },
       Date.now(),
     )
     set({ saveState: result })
   }
 
-  /** 切换持久化后端之后，把列表和当前项目重新读一遍 */
-  const reloadAll = async () => {
-    const store = getStorage()
-    const summaries = await store.listProjects()
-    const cur = get().novel
-    let novel = cur
-    if (cur) {
-      // 换后端后原项目可能不存在，此时退回列表里的第一本
-      const stillThere = summaries.some((s) => s.id === cur.project.id)
-      novel = stillThere ? cur : summaries[0] ? await store.read(summaries[0].id) : null
-    }
-    set({
-      summaries,
-      novel,
-      index: novel ? reindex(novel) : null,
-      storageMode: store.kind === 'localStorage' ? 'localStorage' : 'filesystem',
-      rootName: store.rootName,
-      pendingRoot: null,
-      selectedId: null,
-    })
-    clearHistory()
+  /**
+   * 作品库列表 = 注册表里的作品文件夹 + 内部存储里的作品。
+   *
+   * 以前这里是 store.listProjects()：因为那时候一个"小说库根目录"里装着
+   * 所有作品，扫一遍就有列表。现在一个文件夹就是一部作品，没有可以扫的
+   * 统一目录了，所以列表来自记账 + 内部存储两处。
+   */
+  const refreshSummaries = async (): Promise<ProjectSummary[]> => {
+    const internal = await new LocalStorageAdapter().listProjects().catch(() => [])
+    const folderWorks = loadWorks().filter((w) => w.kind === 'folder')
+    const rows: ProjectSummary[] = [
+      ...folderWorks.map((w) => ({
+        id: w.id,
+        title: w.title,
+        updatedAt: w.updatedAt,
+        entityCount: w.entityCount,
+      })),
+      ...internal,
+    ]
+    return rows.sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   return {
@@ -369,7 +374,6 @@ export const useStore = create<State>((set, get) => {
     searchOpen: false,
     storageMode: 'localStorage',
     rootName: null,
-    pendingRoot: null,
     canUseFilesystem: supportsFileSystem() || isTauri(),
     diskChange: null,
     saveState: { kind: 'idle' },
@@ -379,67 +383,78 @@ export const useStore = create<State>((set, get) => {
     redoLabel: null,
 
     init: async () => {
-      /* 一进来永远是作品库，不自动打开任何一本。
-         以前是「打开最近更新的那本，省掉一次点击」，但那样每次启动都被
-         直接丢进正文里：既看不到自己有哪些作品，也会让人以为程序只认得
-         一本。作者的心智模型是"先看到书架，再拿一本下来"。
-         自动打开留一条理由也站不住 —— 想继续写的人，点一下卡片就行，
-         而那一刻正好能看见它的标题和进度。 */
-      /* ── 桌面版先走这条路 ──
-         桌面版手里有真实路径，不需要用户每次点一下授权，
-         所以能直接接着上次的小说库开。这是它比浏览器版省事的地方。
-         只有一种情况不切过去：那个文件夹不见了、或者里面已经空了。
-         那时候宁可停在内部存储上 —— 换成空列表会让人以为稿子没了。 */
-      if (isTauri()) {
-        const restored = restoreTauriStorage()
-        if (restored) {
-          const summaries = await restored.listProjects().catch(() => [])
-          if (summaries.length > 0) {
-            setStorage(restored)
-            set({
-              novel: null,
-              index: null,
-              summaries,
-              storageMode: 'filesystem',
-              rootName: restored.rootName,
-              ready: true,
-            })
-            return
-          }
-        }
-      } else {
-        /* 先把上次用过的文件夹静默接回来：如果浏览器还留着授权，
-           就直接接着用，不再让作者每开一次点一次。
-           接不回来（授权已退回 prompt）才显示那一条「继续使用」。 */
-        const silent = await FileStorage.restore().catch(() => null)
-        if (silent) {
-          setStorage(silent)
-          set({ storageMode: 'filesystem', rootName: silent.rootName })
-        } else {
-          const lastRoot = await FileStorage.hasSaved().catch(() => null)
-          if (lastRoot) set({ pendingRoot: lastRoot })
-        }
-      }
+      /* 一进来永远是作品库。
+         现在没有"小说库根目录"这个概念了：一个文件夹就是一部作品，
+         列表来自两处 —— 内部存储里的作品（还没选文件夹时用的），
+         以及注册表里记着的那几个作品文件夹。 */
+      const internal = await new LocalStorageAdapter().listProjects().catch(() => [])
+      const folderWorks = loadWorks().filter((w) => w.kind === 'folder')
+      const summaries: ProjectSummary[] = [
+        ...folderWorks.map((w) => ({
+          id: w.id,
+          title: w.title,
+          updatedAt: w.updatedAt,
+          entityCount: w.entityCount,
+        })),
+        ...internal,
+      ].sort((a, b) => b.updatedAt - a.updatedAt)
 
-      const store = getStorage()
-      const summaries = await store.listProjects()
-      if (summaries.length === 0) {
-        // 一本书都没有：直接停在作品库，让作者自己新建。
-        // 不再播种演示小说 —— 一打开就看到别人的角色和势力是干扰，
-        // 作者要的是干净的空本子。
-        set({ novel: null, index: null, summaries: [], ready: true })
-        return
-      }
-      // 有作品也只列出来，不替你打开。「字典 → 概念」的迁移推迟到真正
-      // 打开某一本时再做（openProject 里会做），不会因此漏掉。
-      set({ novel: null, index: null, summaries, ready: true })
+      set({
+        novel: null,
+        index: null,
+        summaries,
+        storageMode: 'localStorage',
+        rootName: null,
+        ready: true,
+      })
     },
 
     openProject: async (id) => {
-      const n = await getStorage().read(id)
-      if (!n) return
+      const ref = loadWorks().find((w) => w.id === id)
+
+      /* 内部存储里的作品：列表项没有 ref，直接走 LocalStorageAdapter */
+      if (!ref || ref.kind === 'internal') {
+        useLocalStorageFallback()
+        const n = await getStorage().read(id)
+        if (!n) return
+        const adopted = adopt(n)
+        clearHistory()
+        set({
+          novel: adopted.novel,
+          index: adopted.index,
+          selectedId: null,
+          view: 'overview',
+          searchQuery: '',
+          diskChange: null,
+          storageMode: 'localStorage',
+          rootName: null,
+        })
+        await refreshBaseline(n)
+        if (adopted.migratedTerms) scheduleSave()
+        return
+      }
+
+      /* 作品文件夹：按注册表里记的位置把适配器接上 */
+      let next: StorageAdapter | null = null
+      if (isTauri()) {
+        if (!ref.path) return
+        next = new TauriStorage(ref.path)
+      } else {
+        if (!ref.handleKey) return
+        const handle = await loadHandle(ref.handleKey).catch(() => null)
+        if (!handle) {
+          throw new Error('浏览器把这个文件夹的访问权限收回了，请重新「打开作品文件夹」指一次。')
+        }
+        const perm = (await handle.queryPermission?.({ mode: 'readwrite' })) ?? 'granted'
+        const ok = perm === 'granted' ? 'granted' : await handle.requestPermission?.({ mode: 'readwrite' })
+        if (ok !== 'granted') throw new Error('需要你允许读写这个文件夹才能打开作品。')
+        next = FileStorage.wrap(handle)
+      }
+
+      setStorage(next)
+      const n = await next.read(id).catch(() => null)
+      if (!n) throw new Error('这个文件夹里找不到 novel.json，可能被移动或改名了。')
       const adopted = adopt(n)
-      // 换了一本书：撤回栈必须清空，否则会撤到上一本书的内容里
       clearHistory()
       set({
         novel: adopted.novel,
@@ -448,44 +463,106 @@ export const useStore = create<State>((set, get) => {
         view: 'overview',
         searchQuery: '',
         diskChange: null,
+        storageMode: 'filesystem',
+        rootName: next.rootName,
       })
       await refreshBaseline(n)
       if (adopted.migratedTerms) scheduleSave()
     },
 
+    /**
+     * 新建作品。
+     *
+     * 「文件夹即作品」之后，新建 = 先要一个文件夹：
+     * 桌面版弹系统对话框，浏览器版弹文件夹选择器。选中的文件夹就是这个
+     * 作品的家，novel.json 和各类型目录直接写在它下面。
+     * 没有文件夹能力的环境（Firefox/Safari）退回内部存储。
+     */
     newProject: async (title) => {
       const project = createProject(title)
       const novel: Novel = { project, entities: [], outline: [], terms: [] }
-      const store = getStorage()
-      await store.write(novel)
+
+      if (isTauri()) {
+        const picked = await pickLibraryFolder()
+        if (!picked) return
+        await picked.write(novel)
+        rememberRoot(picked.root)
+        upsertWork({
+          id: project.id,
+          kind: 'folder',
+          title: project.title,
+          folderName: picked.rootName ?? '',
+          path: picked.root,
+          updatedAt: project.updatedAt ?? Date.now(),
+          entityCount: 0,
+        })
+        setStorage(picked)
+      } else if (supportsFileSystem()) {
+        const picked = await FileStorage.pick()
+        if (!picked) return
+        await picked.write(novel)
+        const key = await stashHandle(project.id, picked.handle)
+        upsertWork({
+          id: project.id,
+          kind: 'folder',
+          title: project.title,
+          folderName: picked.rootName ?? '',
+          handleKey: key,
+          updatedAt: project.updatedAt ?? Date.now(),
+          entityCount: 0,
+        })
+        setStorage(picked)
+      } else {
+        // 没有文件夹能力：留在内部存储
+        useLocalStorageFallback()
+        await getStorage().write(novel)
+        upsertWork({
+          id: project.id,
+          kind: 'internal',
+          title: project.title,
+          folderName: '',
+          updatedAt: project.updatedAt ?? Date.now(),
+          entityCount: 0,
+        })
+      }
+
       clearHistory()
       set({
         novel,
         index: reindex(novel),
-        summaries: await store.listProjects(),
+        summaries: await refreshSummaries(),
         selectedId: null,
         view: 'overview',
         searchQuery: '',
+        storageMode: isTauri() || supportsFileSystem() ? 'filesystem' : 'localStorage',
+        rootName: getStorage().rootName,
       })
     },
 
+    /**
+     * 从作品库移出。
+     *
+     * 只移除"列表里的这一条"，**不动磁盘上的文件夹** —— 在「文件夹即作品」
+     * 之后，删除列表项和删除作品是两件事，而后者风险太大，不该藏在一个
+     * 小垃圾桶图标后面。想真删，去文件管理器里删那个文件夹。
+     */
     deleteProject: async (id) => {
-      const store = getStorage()
-      await store.remove(id)
-      clearHistory()
-      const summaries = await store.listProjects()
-      if (get().novel?.project.id === id) {
-        const next = summaries[0] ? await store.read(summaries[0].id) : null
-        set({
-          novel: next,
-          index: next ? reindex(next) : null,
-          selectedId: null,
-          summaries,
-        })
+      const ref = loadWorks().find((w) => w.id === id)
+      if (ref && ref.kind === 'folder') {
+        if (ref.handleKey) clearHandle(id)
+        dropWork(id)
       } else {
-        set({ summaries })
+        useLocalStorageFallback()
+        await getStorage().remove(id)
+        dropWork(id)
       }
+      set({
+        summaries: await refreshSummaries(),
+        novel: get().novel?.project.id === id ? null : get().novel,
+        index: get().novel?.project.id === id ? null : get().index,
+      })
     },
+
 
     backToLibrary: () => {
       clearHistory()
@@ -710,91 +787,75 @@ export const useStore = create<State>((set, get) => {
         '撤掉一处摆放',
       ),
 
-    /* ---------- 持久化位置切换 ---------- */
+    /* ---------- 打开一部已有的作品文件夹 ---------- */
 
     /**
-     * 选一个文件夹当小说库。
-     * 切换前先把内存里正在编辑的那本写回去，避免切换瞬间丢改动。
+     * 「打开作品文件夹…」：把一个已经存在的作品文件夹登记进作品库并打开。
+     *
+     * 这是「文件夹即作品」之后的主要入口之一 —— 别人的作品、你以前的
+     * 备份、从网盘拷回来的东西，都是指一下这个文件夹就开始用。
+     * 判据很简单：这一层里有 novel.json 才算作品。
      */
-    chooseFolder: async () => {
-      const current = getStorage()
+    openWorkFolder: async () => {
       const editing = get().novel
-      if (editing) await current.write(editing).catch(() => undefined)
+      if (editing) await getStorage().write(editing).catch(() => undefined)
 
-      /* 桌面版和浏览器版走两个不同的对话框：
-         桌面版是系统自带的选文件夹窗口，选完就拿到真实路径、永久可用；
-         浏览器版是 File System Access API，权限每次启动都要重新点。 */
       let next: StorageAdapter | null = null
       if (isTauri()) {
         next = await pickLibraryFolder()
-      } else {
-        next = await FileStorage.pick().catch((err: unknown) => {
-          // 用户取消选择也会走到这里，不该当成错误
-          if ((err as { name?: string })?.name === 'AbortError') return null
-          throw err
+      } else if (supportsFileSystem()) {
+        const handle = await window.showDirectoryPicker!({
+          id: 'novel-studio-open-work',
+          mode: 'readwrite',
+          startIn: 'documents',
         })
+        next = FileStorage.wrap(handle)
+      } else {
+        throw new Error('这个浏览器不支持文件夹访问（Firefox / Safari 尚未实现）。用桌面版，或换 Edge / Chrome。')
       }
       if (!next) return
 
-      /* 拦住「把小说库选进某部作品里面」。
-         小说库的结构是 `<根>/小说/<作品名>/`；如果这里选中的正好是某部作品
-         自己那一层，之后新建的作品就会嵌到它里面去（`小说/战国记/小说/新作品`），
-         看起来就像"所有作品挤在同一个文件夹里"。选错一层比选错位置更难发现。 */
-      const insideNovel =
-        next instanceof FileStorage
-          ? await next.hasNovelJson().catch(() => false)
-          : next instanceof TauriStorage
-            ? /[\\/]小说[\\/]/.test(next.root)
-            : false
-      if (insideNovel) {
-        throw new Error(
-          '这一层是某一部作品自己的文件夹（里面已经有 novel.json）。请往上退一级，选「小说库」那一层。',
-        )
+      const novel = await next.read('').catch(() => null)
+      if (!novel) {
+        throw new Error('这个文件夹里没有 novel.json，它不是一部作品。请选作品自己那一层，别再往上选。')
       }
 
-      // 把内部存储里的作品也搬过去，否则用户会以为自己的东西没了
-      for (const s of await current.listProjects()) {
-        const n = await current.read(s.id)
-        if (n) await next.write(n).catch(() => undefined)
+      const id = novel.project.id
+      const summary = {
+        id,
+        kind: 'folder' as const,
+        title: novel.project.title,
+        folderName: next.rootName ?? '',
+        updatedAt: novel.project.updatedAt ?? Date.now(),
+        entityCount: novel.entities.length,
+      }
+      if (next instanceof TauriStorage) {
+        upsertWork({ ...summary, path: next.root })
+        rememberRoot(next.root)
+      } else if (next instanceof FileStorage) {
+        const key = await stashHandle(id, next.handle)
+        upsertWork({ ...summary, handleKey: key })
       }
 
-      /* 最后再把内存里正在编辑的那份写进去。
-         顺序很重要：这条路径也可能是从「找不到文件夹」点过来的，
-         那时磁盘读不到内容，只有内存里才是最新的。
-         放在最后 = 内存版本不会被上面的旧副本盖掉。 */
-      if (editing) await next.write(editing).catch(() => undefined)
-
-      // 桌面版把路径记下来，下次启动直接恢复，不用再选一次
-      if (next instanceof TauriStorage) rememberRoot(next.root)
-
       setStorage(next)
-      await reloadAll()
+      const adopted = adopt(novel)
+      clearHistory()
+      set({
+        novel: adopted.novel,
+        index: adopted.index,
+        summaries: await refreshSummaries(),
+        selectedId: null,
+        view: 'overview',
+        searchQuery: '',
+        diskChange: null,
+        storageMode: 'filesystem',
+        rootName: next.rootName,
+      })
+      await refreshBaseline(novel)
+      if (adopted.migratedTerms) scheduleSave()
     },
 
-    /**
-     * 重新授权上次用过的文件夹（必须在用户点击事件里调用）。
-     *
-     * 这里刻意不把内存里的副本写回磁盘。原因：文件夹在断开期间
-     * 很可能被用户在外部编辑过（这正是「文件优先」的意义所在），
-     * 一旦先写回，就会用陈旧的内存副本覆盖掉磁盘上更新的内容。
-     * 所以顺序是「先读磁盘，让磁盘赢」，然后 reloadAll 会把
-     * 当前项目替换成磁盘版本。
-     */
-    resumeFolder: async () => {
-      const next = await FileStorage.reauthorize()
-      if (!next) return
-      setStorage(next)
-      await reloadAll()
-    },
 
-    disconnectFolder: () => {
-      // 桌面版要把记住的路径一起丢掉，否则下次启动又会自动跳回那个文件夹
-      if (isTauri()) forgetRoot()
-      useLocalStorageFallback()
-      void FileStorage.forget()
-      diskBaseline = null
-      void reloadAll()
-    },
 
     /* ---------- 外部改动检测 ----------
        设计取舍：只检测，不自动覆盖任何一边。
