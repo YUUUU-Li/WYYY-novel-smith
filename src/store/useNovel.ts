@@ -145,6 +145,8 @@ interface State {
   openWorkFolder: () => Promise<void>
   /** 作品文件夹被改名/挪走之后，重新指过去（只更新记账，不搬文件） */
   relocateWork: (id: string) => Promise<void>
+  /** 作者自己写"这部作品在哪"（浏览器版拿不到父目录，靠它补全层级） */
+  setWorkLabel: (id: string, label: string) => Promise<void>
   /** 轮询入口：指纹变了就去看内容，内容真变了才提示 */
   checkDisk: () => Promise<void>
   /** 接受磁盘版本：丢弃内存改动，重新加载 */
@@ -375,6 +377,7 @@ export const useStore = create<State>((set, get) => {
         kind: 'folder' as const,
         location: w.folderName || w.path || '作品文件夹',
         locationPath: w.path,
+        locationLabel: w.label,
       })),
       ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
     ]
@@ -420,8 +423,8 @@ export const useStore = create<State>((set, get) => {
           kind: 'folder' as const,
           location: w.folderName || w.path || '作品文件夹',
           locationPath: w.path,
+          locationLabel: w.label,
         })),
-        ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
         ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
       ]
       const sorted = dedupe(summaries)
@@ -881,6 +884,13 @@ export const useStore = create<State>((set, get) => {
       set({ summaries: await refreshSummaries() })
     },
 
+    setWorkLabel: async (id, label) => {
+      const ref = loadWorks().find((w) => w.id === id)
+      if (!ref) return
+      upsertWork({ ...ref, label: label.trim() || undefined })
+      set({ summaries: await refreshSummaries() })
+    },
+
     openWorkFolder: async () => {
       const editing = get().novel
       if (editing) await getStorage().write(editing).catch(() => undefined)
@@ -900,9 +910,16 @@ export const useStore = create<State>((set, get) => {
       }
       if (!next) return
 
-      const novel = await next.read('').catch(() => null)
+      /* 先列一遍拿到真实 id，再按 id 读。
+         以前这里用 read('') 去"探测这一层有没有作品"，但磁盘侧是按 id 找作品的，
+         空 id 不属于任何作品，于是好好的文件夹会被判成"里面没有 novel.json"。 */
+      const found = await next.listProjects().catch(() => [])
+      const novel = found.length > 0 ? await next.read(found[0].id).catch(() => null) : null
       if (!novel) {
-        throw new Error('这个文件夹里没有 novel.json，它不是一部作品。请选作品自己那一层，别再往上选。')
+        throw new Error(
+          '这个文件夹里没有 novel.json，不是一部作品。\n' +
+            '往里再选一层 —— 选那个直接放着 novel.json、角色/、地点/ 的文件夹。',
+        )
       }
 
       const id = novel.project.id

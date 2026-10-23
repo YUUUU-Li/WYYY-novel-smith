@@ -18,6 +18,7 @@ import { StorageBar } from '../components/StorageBar'
 export function Library() {
   const summaries = useStore((s) => s.summaries)
   const openProject = useStore((s) => s.openProject)
+  const openWorkFolder = useStore((s) => s.openWorkFolder)
   const relocateWork = useStore((s) => s.relocateWork)
   const newProject = useStore((s) => s.newProject)
   const deleteProject = useStore((s) => s.deleteProject)
@@ -89,6 +90,34 @@ export function Library() {
             >
               按回车也可以。
             </p>
+
+            {/* 第一次用桌面版的人，手里往往已经有作品文件夹了。
+                空作品库以"新建"为主角是对的，但必须让"打开已有的"同样显眼 ——
+                否则会以为自己得重新建一部，或者去选上一级目录。 */}
+            <div className="mt-8 flex flex-wrap items-center gap-x-2 gap-y-2">
+              <span className="text-[12px]" style={{ color: 'var(--color-ink-faint)' }}>
+                已经有作品了？
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() =>
+                  void openWorkFolder().catch((e) =>
+                    setErr(e instanceof Error ? e.message : '操作失败'),
+                  )
+                }
+                title="选一个已经存在的作品文件夹（里面有 novel.json）"
+              >
+                <FolderOpen size={13} />
+                打开作品文件夹
+              </button>
+            </div>
+
+            {err && (
+              <div className="mt-3 text-[11.5px] whitespace-pre-line" style={{ color: 'var(--color-danger)' }} role="alert">
+                {err}
+              </div>
+            )}
 
             <div className="mt-12">
               <StorageBar />

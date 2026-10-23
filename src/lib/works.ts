@@ -28,6 +28,14 @@ export interface WorkRef {
   title: string
   /** 显示用：文件夹名 */
   folderName: string
+  /**
+   * 作者自己写的"位置"标签，优先级最高。
+   *
+   * 为什么需要：浏览器的文件夹句柄只给最后一层的名字，拿不到父目录，
+   * 所以想看到「小说库 / 小说 / 战国记」这种完整层级，只能由作者填一次。
+   * 桌面版有真实路径，不填也没关系。
+   */
+  label?: string
   /** 桌面版：作品文件夹的绝对路径 */
   path?: string
   /** 浏览器版：IndexedDB 里句柄的 key */

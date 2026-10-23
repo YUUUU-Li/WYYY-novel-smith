@@ -101,7 +101,7 @@ export function StorageBar() {
           role="alert"
         >
           <WarningCircle size={14} className="mt-0.5 flex-none" />
-          <span>{err}</span>
+          <span className="whitespace-pre-line">{err}</span>
         </div>
       )}
     </div>

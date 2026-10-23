@@ -55,7 +55,10 @@ fn find_folder_by_id(root: &std::path::Path, id: &str) -> Option<PathBuf> {
     for folder in list_novel_folders(root) {
         let dir: PathBuf = if folder.is_empty() { root.to_path_buf() } else { root.join(&folder) };
         if let Some((found_id, _, _, _)) = read_meta(&dir) {
-            if found_id == id {
+            // id 为空 = "就要这一层的作品"（前端打开一个作品文件夹时用它探测）。
+            // 以前这里只做严格相等比较，空 id 永远匹配不上，于是把一个好文件夹
+            // 判成"里面没有 novel.json"。
+            if id.is_empty() || found_id == id {
                 return Some(dir);
             }
         }
@@ -284,7 +287,7 @@ pub async fn pick_library(app: tauri::AppHandle) -> Result<Option<String>, Strin
     let picked = app
         .dialog()
         .file()
-        .set_title("选择小说库文件夹")
+        .set_title("选择这部作品所在的文件夹")
         .blocking_pick_folder();
     Ok(picked.map(|p| p.to_string()))
 }
@@ -360,4 +363,109 @@ pub fn signature_of(root: String, id: String) -> Result<Option<String>, String> 
             .collect::<Vec<_>>()
             .join("|"),
     ))
+}
+
+
+/* ============================================================
+   命令层的测试
+
+   钉住一件很容易回归的事：「作品文件夹自己那一层」必须能被
+   list_projects / read_novel 认出来。
+
+   这条 bug 真实发生过 —— find_folder_by_id 只做 id 严格相等比较，
+   前端却用空 id 去探测「这一层有没有作品」，于是空 id 永远匹配不上，
+   用户选对了文件夹却被判成「这个文件夹里没有 novel.json」。
+   ============================================================ */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 临时工作目录，测试名 + 时间戳保证互不干扰
+    fn temp_root(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("novel-studio-cmd-{tag}-{nanos}"));
+        std::fs::create_dir_all(&dir).expect("建临时目录");
+        dir
+    }
+
+    /// 造一部「文件夹就是作品」的作品：novel.json 直接躺在这一层
+    fn seed_work(dir: &std::path::Path, id: &str, title: &str) {
+        let char_dir = dir.join(entity_dir("character").expect("角色目录"));
+        std::fs::create_dir_all(&char_dir).expect("建角色目录");
+        let meta = serde_json::json!({
+            "id": id,
+            "title": title,
+            "logline": "",
+            "updatedAt": 1_700_000_000_000u64,
+        });
+        std::fs::write(dir.join(META_FILE), meta.to_string()).expect("写 novel.json");
+        std::fs::write(
+            char_dir.join("林昭.md"),
+            "---\nname: 林昭\ntype: character\n---\n\n主角。\n",
+        )
+        .expect("写实体");
+    }
+
+    #[test]
+    fn work_folder_lists_itself_as_one_project() {
+        let dir = temp_root("list");
+        seed_work(&dir, "proj_abc", "战国记");
+
+        let rows = list_projects(dir.to_string_lossy().to_string()).expect("列作品");
+        assert_eq!(rows.len(), 1, "作品文件夹里应当只有它自己这一部");
+        assert_eq!(rows[0].id, "proj_abc");
+        assert_eq!(rows[0].title, "战国记");
+        assert_eq!(rows[0].entity_count, 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_id_opens_the_work_at_this_layer() {
+        let dir = temp_root("empty");
+        seed_work(&dir, "proj_abc", "战国记");
+
+        // 空 id 是「就要这一层」的约定。前端现在改用真实 id，
+        // 但这层保底必须成立，否则老版本前端会把好文件夹判成空的。
+        let raw = read_novel(dir.to_string_lossy().to_string(), String::new())
+            .expect("读作品")
+            .expect("空 id 应当能打开这一层的作品");
+        assert_eq!(raw.project.get("id").and_then(|v| v.as_str()), Some("proj_abc"));
+        assert_eq!(raw.raw_entities.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn real_id_opens_the_same_work() {
+        let dir = temp_root("byid");
+        seed_work(&dir, "proj_abc", "战国记");
+
+        // 这就是前端「打开作品文件夹」现在走的路：先列、拿真实 id、再读
+        let rows = list_projects(dir.to_string_lossy().to_string()).expect("列作品");
+        let raw = read_novel(dir.to_string_lossy().to_string(), rows[0].id.clone())
+            .expect("读作品")
+            .expect("按真实 id 应当能打开");
+        assert_eq!(raw.project.get("title").and_then(|v| v.as_str()), Some("战国记"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wrong_id_does_not_open_another_work() {
+        let dir = temp_root("wrong");
+        seed_work(&dir, "proj_abc", "战国记");
+
+        // 指错文件夹时宁可打不开，也不能把两本书搞混
+        let raw = read_novel(dir.to_string_lossy().to_string(), "proj_other".to_string())
+            .expect("读作品");
+        assert!(raw.is_none(), "id 对不上就不该打开");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

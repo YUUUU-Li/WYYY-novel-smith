@@ -50,8 +50,10 @@ export interface ProjectSummary {
    * 顶着最后打开那本的名字 —— 位置是作品自己的属性，不是全局状态。
    */
   location?: string
-  /** 桌面版：完整路径，放进 tooltip */
+  /** 桌面版：完整路径 */
   locationPath?: string
+  /** 作者自己写的层级标签（浏览器版拿不到父目录时用） */
+  locationLabel?: string
   /** 这部作品在文件夹里还是在程序内部存储里 */
   kind?: 'folder' | 'internal'
 }
