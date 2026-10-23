@@ -279,7 +279,7 @@ export const useStore = create<State>((set, get) => {
   }
 
   /** 安排一次落盘。防抖，合并同一批改动 */
-  const scheduleSave = (ms = 600) => {
+  const scheduleSave = (ms = 250) => {
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       void flushSave()
@@ -427,7 +427,10 @@ export const useStore = create<State>((set, get) => {
     rootName: null,
     canUseFilesystem: supportsFileSystem() || isTauri(),
     diskChange: null,
-    saveState: { kind: 'idle' },
+    /* 一进来什么都没改过，说「已保存」才是实话。
+       以前这里是 idle（含义是「改动还没落盘」），于是刚打开一部作品、一个字都没动，
+       顶栏就写着「有未保存的改动」，白吓一跳。 */
+    saveState: { kind: 'saved', at: Date.now() },
     undoDepth: 0,
     redoDepth: 0,
     undoLabel: null,
@@ -479,6 +482,7 @@ export const useStore = create<State>((set, get) => {
         set({
           novel: adopted.novel,
           index: adopted.index,
+          saveState: { kind: 'saved', at: Date.now() },
           selectedId: null,
           view: 'overview',
           searchQuery: '',
@@ -516,6 +520,7 @@ export const useStore = create<State>((set, get) => {
       set({
         novel: adopted.novel,
         index: adopted.index,
+        saveState: { kind: 'saved', at: Date.now() },
         selectedId: null,
         view: 'overview',
         searchQuery: '',
@@ -587,6 +592,7 @@ export const useStore = create<State>((set, get) => {
       set({
         novel,
         index: reindex(novel),
+        saveState: { kind: 'saved', at: Date.now() },
         summaries: await refreshSummaries(),
         selectedId: null,
         view: 'overview',
@@ -976,6 +982,7 @@ export const useStore = create<State>((set, get) => {
       set({
         novel: adopted.novel,
         index: adopted.index,
+        saveState: { kind: 'saved', at: Date.now() },
         summaries: await refreshSummaries(),
         selectedId: null,
         view: 'overview',
@@ -1070,6 +1077,7 @@ export const useStore = create<State>((set, get) => {
       set({
         novel: adopted.novel,
         index: adopted.index,
+        saveState: { kind: 'saved', at: Date.now() },
         selectedId: keepSelection,
         summaries: await store.listProjects(),
       })

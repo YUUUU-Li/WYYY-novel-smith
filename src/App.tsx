@@ -105,47 +105,43 @@ export function App() {
   }, [])
 
   /**
-   * 关窗之前把还没落盘的改动写掉。
+   * 让「还没落盘的改动」尽量少存在一会儿。
    *
-   * 桌面版：拦下 close 请求 → 先 flush → 再真正销毁窗口。不这么做的话，
-   *   「拖完一个词条就顺手点 ×」这种动作里，那次改动只在内存里，窗口一关
-   *   就没了 —— 浏览器上至少还有个页面卸载事件，桌面版连那个都靠不住。
-   *   如果 flush 报错，**不关窗**：让错误留在界面上，总比一声不响地丢稿子好。
+   * === 这里刻意**不做**关窗拦截 ===
    *
-   * 浏览器版：只剩 beforeunload，来不及做异步写盘，只能在有未保存改动时
-   *   让浏览器弹一句确认。
+   * 上一个版本干过两件事，两件都是错的，而且合起来让程序彻底关不掉：
+   *
+   *   1. 注册了 beforeunload，在有未保存改动时 preventDefault()。
+   *      WebView2 里 unless the host handles ScriptDialogOpening —— 而 Tauri
+   *      没有处理它 —— 这个"确认离开"的对话框根本不会出现，浏览器只是
+   *      **静默取消这次卸载**。于是窗口永远关不掉，连个提示都没有。
+   *      更糟的是初始 saveState 就是 { kind: 'idle' }（含义是"有改动没落盘"），
+   *      所以从一启动就命中这条，等于 100% 关不掉。
+   *
+   *   2. 用 onCloseRequested 拦下关闭、先落盘再 destroy()。
+   *      这条路依赖 Tauri 的事件通道（plugin:event|listen → http://ipc.localhost），
+   *      而我们的 CSP 没有写 connect-src，默认落到 default-src 'self'，
+   *      于是那次 fetch 被 CSP 拒掉 —— handler 压根没注册成功，白写。
+   *
+   * 结论：**任何一次 preventDefault 都必须有一条不依赖 IPC、不依赖对话框的退路，
+   * 否则就是在给作者做一个关不掉窗口的程序。** 这里改成完全不拦，只做两件事：
+   *   · 窗口失焦 / 页面被藏起来时立刻落盘（这两个都是普通 DOM 事件，不经 IPC）
+   *   · 保存防抖从 600ms 缩到 250ms，把「改完立刻点 ×」的丢数据窗口压到最小
+   *
+   * 代价是理论上仍有一个（不到 250ms 的）窗口会丢最后一下改动，但它换来的是
+   * 「× 一定能关掉」。用关不掉换来的那 250 毫秒，不值得。
    */
   useEffect(() => {
     const flush = useStore.getState().flushNow
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (useStore.getState().saveState.kind === 'idle') {
-        e.preventDefault()
-        e.returnValue = ''
-      }
+    const onBlur = () => void flush().catch(() => undefined)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onBlur()
     }
-    window.addEventListener('beforeunload', onBeforeUnload)
-
-    let unlisten: (() => void) | undefined
-    let cancelled = false
-    void (async () => {
-      const { isTauri } = await import('./lib/storage-tauri')
-      if (!isTauri()) return
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const win = getCurrentWindow()
-      const off = await win.onCloseRequested(async (event) => {
-        event.preventDefault()
-        await flush().catch(() => undefined)
-        if (isSaveProblem(useStore.getState().saveState)) return // 存不下就别关
-        await win.destroy()
-      })
-      if (cancelled) off()
-      else unlisten = off
-    })()
-
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
-      cancelled = true
-      unlisten?.()
-      window.removeEventListener('beforeunload', onBeforeUnload)
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
 
