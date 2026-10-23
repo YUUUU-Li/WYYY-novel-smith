@@ -354,8 +354,10 @@ export const useStore = create<State>((set, get) => {
         title: w.title,
         updatedAt: w.updatedAt,
         entityCount: w.entityCount,
+        location: w.folderName || w.path || '作品文件夹',
+        locationPath: w.path,
       })),
-      ...internal,
+      ...internal.map((s) => ({ ...s, location: '程序内部存储' })),
     ]
     return rows.sort((a, b) => b.updatedAt - a.updatedAt)
   }
@@ -395,8 +397,11 @@ export const useStore = create<State>((set, get) => {
           title: w.title,
           updatedAt: w.updatedAt,
           entityCount: w.entityCount,
+          // 位置是作品自己的属性，不是"当前打开的那本"
+          location: w.folderName || w.path || '作品文件夹',
+          locationPath: w.path,
         })),
-        ...internal,
+        ...internal.map((s) => ({ ...s, location: '程序内部存储' })),
       ].sort((a, b) => b.updatedAt - a.updatedAt)
 
       set({

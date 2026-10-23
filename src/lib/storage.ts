@@ -43,6 +43,15 @@ export interface ProjectSummary {
   logline?: string
   updatedAt: number
   entityCount: number
+  /**
+   * 这部作品存在哪，给作品库卡片显示用。
+   * 由 store 填（文件夹名 / "程序内部存储"），存储适配器不负责。
+   * 以前卡片显示的是"当前打开的作品文件夹"，于是回到列表时每张卡都
+   * 顶着最后打开那本的名字 —— 位置是作品自己的属性，不是全局状态。
+   */
+  location?: string
+  /** 桌面版：完整路径，放进 tooltip */
+  locationPath?: string
 }
 
 export interface StorageAdapter {

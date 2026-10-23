@@ -22,6 +22,7 @@ export function StorageBar() {
   const mode = useStore((s) => s.storageMode)
   const rootName = useStore((s) => s.rootName)
   const openWorkFolder = useStore((s) => s.openWorkFolder)
+  const hasNovel = useStore((s) => s.novel !== null)
 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -56,7 +57,14 @@ export function StorageBar() {
         </span>
 
         <div className="min-w-0 flex-1">
-          {mode === 'filesystem' ? (
+          {!hasNovel ? (
+            /* 作品库页没有"当前这部作品"，所以这里只能说清模型本身；
+               每部作品具体在哪，写在它自己的卡片上。 */
+            <div className="text-[11.5px]" style={{ color: 'var(--color-ink-faint)' }}>
+              一个文件夹就是一部作品：文件夹里放着 novel.json 和各类型目录，拷走它就是备份。
+              每部作品的位置写在卡片下面。
+            </div>
+          ) : mode === 'filesystem' ? (
             <div className="text-[11.5px]">
               <span style={{ color: 'var(--color-ink-faint)' }}>这部作品保存在文件夹：</span>
               <span style={{ color: 'var(--color-accent)' }}>{rootName}</span>
