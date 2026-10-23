@@ -35,6 +35,7 @@ pub fn run() {
             commands::delete_novel,
             commands::pick_library,
             commands::signature_of,
+            commands::export_text,
         ])
         .setup(|app| {
             let (dir, fell_back) = pick_webview_dir(app.handle());
@@ -53,17 +54,34 @@ pub fn run() {
             }
             cleanup_stale_dirs(&dir);
 
-            tauri::WebviewWindowBuilder::new(
-                app,
-                "main",
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("吾又一言")
-            .inner_size(1440.0, 940.0)
-            .min_inner_size(1024.0, 680.0)
-            .center()
-            .data_directory(dir)
-            .build()?;
+            /* 为什么这里要绕一道 WindowConfig，而不是 new() 一句句点：
+               `drag_drop_enabled` 只能在配置结构体上设置，建造器没有对应的
+               方法，而它**必须**是 false —— 理由见下面那段注释。 */
+            let win_cfg = tauri::utils::config::WindowConfig {
+                label: "main".into(),
+                url: tauri::WebviewUrl::App("index.html".into()),
+                title: "吾又一言".into(),
+                width: 1440.0,
+                height: 940.0,
+                min_width: Some(1024.0),
+                min_height: Some(680.0),
+                center: true,
+                /* 关掉 Tauri 自带的文件拖放处理器。
+
+                   它在 Windows 上默认是开的，做法是在窗口句柄上注册一个 OLE
+                   IDropTarget。一旦注册，WebView2 自己那套 drop 目标就收不到
+                   消息了，于是**页面里的 HTML5 拖放整个失效** —— 表现正是
+                   「把词条从左边拖进关系网 / 时间线 / 大纲，拖不动」，而这些
+                   在浏览器版里全是好的（浏览器里没有这一层）。
+
+                   程序从来没用到「把文件从资源管理器拖进窗口」这个能力
+                   （前端一行 onDragDropEvent 都没有），所以关掉零损失。 */
+                drag_drop_enabled: false,
+                ..Default::default()
+            };
+            tauri::WebviewWindowBuilder::from_config(app, &win_cfg)?
+                .data_directory(dir)
+                .build()?;
             Ok(())
         })
         .build(tauri::generate_context!());

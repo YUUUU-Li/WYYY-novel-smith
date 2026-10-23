@@ -16,20 +16,35 @@
    存一步，撤回一次只退一个字符——那不是 Word 的行为。同一标签的连续
    改动在 coalesceMs 内并成一步，保留最早的那份 before，这样「撤回」
    退掉的是"这一串输入"，符合直觉。
+
+   为什么每一步还要带一份 context（界面上下文）：
+   撤回的是一份数据快照，但作者是按"我刚做的那件事"来理解撤回的。
+   如果他改完关系网就跑去地图页，此时按 Ctrl+Z，数据退回去了、画面却
+   还停在地图页 —— 屏幕上什么都没动，看起来就像"撤回没生效"。
+   所以每一步顺手记下"当时在哪个页面"，撤回时把画面也带回去。
+   context 由调用方定义形状，这一层不认识它，只负责原样存、原样还。
    ============================================================ */
 
-export interface UndoStep<T> {
+export interface UndoStep<T, C> {
   /** 何时记录，用于判断能不能和上一步合并 */
   at: number
   /** 给界面显示的文字：撤回「删除了 3 个条目」 */
   label: string
   /** 这一步"改动之前"的状态 */
   before: T
+  /** 这一步发生在什么界面上下文里（原样存，原样还） */
+  context: C
 }
 
-export class UndoStack<T> {
-  private past: UndoStep<T>[] = []
-  private future: UndoStep<T>[] = []
+/** 撤回/重做拿回的东西：状态 + 当时在哪 */
+export interface UndoResult<T, C> {
+  state: T
+  context: C
+}
+
+export class UndoStack<T, C = undefined> {
+  private past: UndoStep<T, C>[] = []
+  private future: UndoStep<T, C>[] = []
 
   constructor(
     private readonly limit = 40,
@@ -52,43 +67,51 @@ export class UndoStack<T> {
     return this.future.length > 0 ? this.future[this.future.length - 1].label : null
   }
 
+  /** 撤回一步会回到哪个界面（给界面做提示用），没得撤时 null */
+  get undoContext(): C | null {
+    return this.past.length > 0 ? this.past[this.past.length - 1].context : null
+  }
+
   /**
    * 记一步。`before` 是改动之前的状态。
    *
    * 注意这里同时清空重做栈：一旦有了新改动，"未来"那条分支就不存在了，
    * 这和所有编辑器一致。
+   *
+   * 合并时**保留最早的 context**：这一串改动是从哪个页面起头的，
+   * 撤回就该回到哪个页面。
    */
-  record(before: T, label: string, at = Date.now()): void {
+  record(before: T, label: string, context: C, at = Date.now()): void {
     this.future.length = 0
     const top = this.past[this.past.length - 1]
     if (top && top.label === label && at - top.at <= this.coalesceMs) {
-      // 同一串操作：保留最早的 before，只把时间往后挪
+      // 同一串操作：保留最早的 before 与 context，只把时间往后挪
       top.at = at
       return
     }
-    this.past.push({ at, label, before })
+    this.past.push({ at, label, before, context })
     if (this.past.length > this.limit) this.past.shift()
   }
 
   /**
-   * 撤回。传入"当前状态"，返回需要恢复成的状态；没得撤时返回 null。
+   * 撤回。传入"当前状态"，返回需要恢复成的状态与当时的界面；没得撤时返回 null。
    */
-  undo(current: T, at = Date.now()): T | null {
+  undo(current: T, at = Date.now()): UndoResult<T, C> | null {
     const step = this.past.pop()
     if (!step) return null
-    // 把当前状态推进重做栈，label 沿用被撤回那一步的
-    this.future.push({ at, label: step.label, before: current })
+    // 把当前状态推进重做栈，label 与 context 沿用被撤回那一步的
+    this.future.push({ at, label: step.label, before: current, context: step.context })
     if (this.future.length > this.limit) this.future.shift()
-    return step.before
+    return { state: step.before, context: step.context }
   }
 
   /** 重做。传的同样是"当前状态" */
-  redo(current: T, at = Date.now()): T | null {
+  redo(current: T, at = Date.now()): UndoResult<T, C> | null {
     const step = this.future.pop()
     if (!step) return null
-    this.past.push({ at, label: step.label, before: current })
+    this.past.push({ at, label: step.label, before: current, context: step.context })
     if (this.past.length > this.limit) this.past.shift()
-    return step.before
+    return { state: step.before, context: step.context }
   }
 
   /** 换作品、换存储位置、接受磁盘版本时必须清掉，否则会撤到别人的内容里 */

@@ -594,6 +594,27 @@ body {
   animation: ns-shimmer 1.6s var(--ease-in-out-soft) infinite;
 }
 
+/* 撤回 / 重做之后，整页闪一下。
+   不是装饰：撤回会把画面切回那一步发生的地方，但"切了页"和"东西变了"
+   这两件事，光靠内容变化有时接不住 —— 尤其被撤回的那一小块不在视线里。 */
+@keyframes ns-undo-flash {
+  0% {
+    opacity: 0.16;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.undo-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  background: var(--color-accent);
+  animation: ns-undo-flash 0.52s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

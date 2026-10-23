@@ -455,28 +455,43 @@ export function useLocalStorageFallback(): void {
 
 export { LocalStorageAdapter }
 
-/** 导出功能的共用实现：摊成文件清单后打包下载 */
-export async function exportBundle(novel: Novel): Promise<number> {
+/**
+ * 导出功能的共用实现：摊成文件清单，写成一个 JSON。
+ *
+ * 返回 null 表示作者在另存为窗口里点了取消（桌面版）—— 调用方据此
+ * 不显示「已导出」，而不是假装成功。
+ *
+ * 为什么桌面版必须换一条路：浏览器里用 Blob + <a download> 就能下载，
+ * 而在 WebView2 里那次下载要交给宿主程序处理，Tauri 没装下载处理器，
+ * 于是点下去**什么都不发生也不报错**。所以桌面版弹系统的另存为窗口，
+ * 由 Rust 直接写文件。
+ */
+export async function exportBundle(novel: Novel): Promise<number | null> {
   const files = await novelToFiles(novel)
-  const blob = new Blob(
-    [
-      JSON.stringify(
-        {
-          exportedAt: new Date().toISOString(),
-          project: novel.project.title,
-          fileCount: files.length,
-          files,
-        },
-        null,
-        2,
-      ),
-    ],
-    { type: 'application/json' },
+  const text = JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      project: novel.project.title,
+      fileCount: files.length,
+      files,
+    },
+    null,
+    2,
   )
-  const url = URL.createObjectURL(blob)
+  const name = `${safeFileName(novel.project.title)}-世界观导出.json`
+
+  // 动态 import：避免 storage 和 storage-tauri 之间出现顶层循环依赖
+  const { isTauri } = await import('./storage-tauri')
+  if (isTauri()) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const saved = await invoke<string | null>('export_text', { fileName: name, text })
+    return saved ? files.length : null
+  }
+
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
   const a = document.createElement('a')
   a.href = url
-  a.download = `${safeFileName(novel.project.title)}-世界观导出.json`
+  a.download = name
   a.click()
   URL.revokeObjectURL(url)
   return files.length

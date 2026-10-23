@@ -85,6 +85,16 @@ export type ViewId =
   | 'maps'
   | 'outline'
 
+/**
+ * 撤回栈里每一步带上的"界面上下文"。
+ *
+ * 只有一样东西：当时作者在哪个页面。目的是撤回的时候把画面也带回去 ——
+ * 否则在地图页按 Ctrl+Z，数据退回去了、屏幕一动不动，看着像没生效。
+ */
+export interface UndoContext {
+  view: ViewId
+}
+
 interface State {
   ready: boolean
   summaries: ProjectSummary[]
@@ -134,6 +144,13 @@ interface State {
   redoLabel: string | null
   undo: () => void
   redo: () => void
+  /**
+   * 撤回 / 重做把画面带回来之后，界面上闪一下的计数器（只增不减）。
+   * 界面拿它当 key 播一次动画：告诉作者「这一页刚刚变过」。
+   */
+  flashKey: number
+  /** 立刻落盘一次（关窗、换作品之前用），不等那个防抖计时器 */
+  flushNow: () => Promise<void>
 
   init: () => Promise<void>
   openProject: (id: string) => Promise<void>
@@ -249,7 +266,7 @@ export const useStore = create<State>((set, get) => {
 
   /* 撤回栈。放在模块作用域（不进 React 状态）：它只是记账，
      真正需要重渲染的只有 undoDepth / undoLabel 这几个数字。 */
-  const history = new UndoStack<Novel>(40, 700)
+  const history = new UndoStack<Novel, UndoContext>(40, 700)
 
   /** 写盘之后重新取基线。不做这一步，我们自己的保存会被误判成外部改动 */
   const refreshBaseline = async (novel: Novel): Promise<void> => {
@@ -278,7 +295,7 @@ export const useStore = create<State>((set, get) => {
     if (!cur) return
     const next = mutate(cur)
     next.project = projectUpdated(normalizeOrg(next.project))
-    history.record(cur, label)
+    history.record(cur, label, { view: get().view })
     set({
       novel: next,
       index: reindexToo ? reindex(next) : get().index,
@@ -293,19 +310,29 @@ export const useStore = create<State>((set, get) => {
     scheduleSave()
   }
 
-  /** 把撤回/重做拿到的快照装回界面。选中的条目可能已经不在了，得让位 */
-  const restoreSnapshot = (target: Novel) => {
+  /**
+   * 把撤回/重做拿到的快照装回界面。选中的条目可能已经不在了，得让位。
+   *
+   * `ctx` 是那一步发生在哪个页面：把画面也切回去。少了这一步，撤回发生在
+   * 别的页面上时屏幕一动不动 —— 数据退了，作者却看不出来。
+   *
+   * 顺带把 flashKey 加一：即使这一步本来就在当前页面，也让界面闪一下，
+   * 眼睛能接住「这里刚刚变了」。
+   */
+  const restoreSnapshot = (target: Novel, ctx?: UndoContext) => {
     const sel = get().selectedId
-    set({
+    set((s) => ({
       novel: target,
       index: reindex(target),
       selectedId: sel && target.entities.some((e) => e.id === sel) ? sel : null,
+      ...(ctx ? { view: ctx.view } : {}),
+      flashKey: s.flashKey + 1,
       saveState: { kind: 'idle' },
       undoDepth: history.undoDepth,
       redoDepth: history.redoDepth,
       undoLabel: history.undoLabel,
       redoLabel: history.redoLabel,
-    })
+    }))
     // 撤回也是一次真实改动，必须落盘，否则关掉程序就白撤了
     scheduleSave(120)
   }
@@ -405,6 +432,7 @@ export const useStore = create<State>((set, get) => {
     redoDepth: 0,
     undoLabel: null,
     redoLabel: null,
+    flashKey: 0,
 
     init: async () => {
       /* 一进来永远是作品库。
@@ -609,18 +637,21 @@ export const useStore = create<State>((set, get) => {
 
     /* ---------- 撤回 / 重做 ---------- */
 
+    /** 关窗 / 换作品前用：不等防抖，立刻写一次 */
+    flushNow: () => flushSave(),
+
     undo: () => {
       const n = get().novel
       if (!n) return
       const prev = history.undo(n)
-      if (prev) restoreSnapshot(prev)
+      if (prev) restoreSnapshot(prev.state, prev.context)
     },
 
     redo: () => {
       const n = get().novel
       if (!n) return
       const next = history.redo(n)
-      if (next) restoreSnapshot(next)
+      if (next) restoreSnapshot(next.state, next.context)
     },
 
     applyCalendar: (calendar) =>

@@ -104,6 +104,51 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  /**
+   * 关窗之前把还没落盘的改动写掉。
+   *
+   * 桌面版：拦下 close 请求 → 先 flush → 再真正销毁窗口。不这么做的话，
+   *   「拖完一个词条就顺手点 ×」这种动作里，那次改动只在内存里，窗口一关
+   *   就没了 —— 浏览器上至少还有个页面卸载事件，桌面版连那个都靠不住。
+   *   如果 flush 报错，**不关窗**：让错误留在界面上，总比一声不响地丢稿子好。
+   *
+   * 浏览器版：只剩 beforeunload，来不及做异步写盘，只能在有未保存改动时
+   *   让浏览器弹一句确认。
+   */
+  useEffect(() => {
+    const flush = useStore.getState().flushNow
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (useStore.getState().saveState.kind === 'idle') {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+
+    let unlisten: (() => void) | undefined
+    let cancelled = false
+    void (async () => {
+      const { isTauri } = await import('./lib/storage-tauri')
+      if (!isTauri()) return
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const win = getCurrentWindow()
+      const off = await win.onCloseRequested(async (event) => {
+        event.preventDefault()
+        await flush().catch(() => undefined)
+        if (isSaveProblem(useStore.getState().saveState)) return // 存不下就别关
+        await win.destroy()
+      })
+      if (cancelled) off()
+      else unlisten = off
+    })()
+
+    return () => {
+      cancelled = true
+      unlisten?.()
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [])
+
   if (!ready) {
     return (
       <div className="h-full grid place-items-center">
@@ -123,18 +168,36 @@ export function App() {
       <TopBar />
       <div className="flex-1 min-h-0 flex">
         <Rail />
-        <main className="flex-1 min-w-0 min-h-0 overflow-hidden">
+        <main className="relative flex-1 min-w-0 min-h-0 overflow-hidden">
           {view === 'overview' && <OverviewView />}
           {view === 'entities' && <EntitiesView />}
           {view === 'sketch' && <CanvasGraph />}
           {view === 'timeline' && <TimelineSection />}
           {view === 'maps' && <MapsSection />}
           {view === 'outline' && <OutlineView />}
+          <UndoFlash />
           </main>
       </div>
       <SearchPalette />
     </div>
   )
+}
+
+/* ============================================================
+   撤回 / 重做之后闪一下
+
+   撤回会把画面切回"那一步发生的地方"（见 store 里的 UndoContext）。
+   但有两种情况切换本身不足以让人接住：
+     · 本来就停在那页 → 零视觉变化
+     · 切页了，但被撤回的那一小块不在视线中心
+   所以再加一层极淡的整页闪光，成本最低的「这里刚刚变过」。
+   ============================================================ */
+
+function UndoFlash() {
+  const flashKey = useStore((s) => s.flashKey)
+  if (flashKey === 0) return null
+  // key 变化 = 重新挂载 = 动画重播一次
+  return <div key={flashKey} className="undo-flash" aria-hidden />
 }
 
 /* ============================================================

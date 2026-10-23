@@ -367,6 +367,39 @@ pub fn signature_of(root: String, id: String) -> Result<Option<String>, String> 
 
 
 /* ============================================================
+   导出成文件
+
+   为什么不能沿用浏览器那一套（Blob + <a download>）：
+   WebView2 里那次下载要经过宿主程序的下载处理，而 Tauri 没有装
+   任何下载处理器 —— 表现就是点了「导出」什么也没发生，也不报错。
+   在浏览器里同一个函数工作正常，所以这是又一个「本地跑才露头」的坑。
+
+   于是桌面版走这条：弹系统的另存为窗口，直接把文本写进去。
+   取消返回 Ok(None)，前端据此不假装成功。
+   ============================================================ */
+
+#[tauri::command]
+pub async fn export_text(
+    app: tauri::AppHandle,
+    file_name: String,
+    text: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("导出到文件")
+        .set_file_name(&file_name)
+        .blocking_save_file();
+    let Some(target) = picked else {
+        return Ok(None); // 作者点了取消：不写、也不谎报成功
+    };
+    let path = target.to_string();
+    std::fs::write(&path, text.as_bytes()).map_err(err_str)?;
+    Ok(Some(path))
+}
+
+/* ============================================================
    命令层的测试
 
    钉住一件很容易回归的事：「作品文件夹自己那一层」必须能被

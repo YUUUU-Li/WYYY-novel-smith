@@ -20,7 +20,7 @@ import { ENTITY_META, ENTITY_TYPES, type EntityType } from '../lib/types'
 import { isolatedEntities, projectStats } from '../lib/index-builder'
 import { unresolvedLinks } from '../lib/wiki-links'
 import { TypeDot } from '../components/ui'
-import { countWords } from '../lib/util'
+import { copyText, countWords } from '../lib/util'
 import { exportBundle } from '../lib/storage'
 
 export function OverviewView() {
@@ -304,9 +304,14 @@ export function OverviewView() {
                       return `${head}${gloss ? ` · ${gloss}` : ''}${def ? ` —— ${def}` : ''}`
                     })
                     .join('\n')
-                  void navigator.clipboard?.writeText(text).catch(() => undefined)
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1600)
+                  /* 必须等复制真成功再说「已复制」。
+                     以前是无条件置 true：WebView2 里剪贴板被拒时，
+                     界面照样显示「已复制」，作者粘出来却是空的。 */
+                  void copyText(text).then((done) => {
+                    if (!done) return
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1600)
+                  })
                 }}
                 title="把这张表复制成 Markdown（可以直接贴给读者）"
               >
