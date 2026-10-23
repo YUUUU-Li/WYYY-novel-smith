@@ -52,6 +52,8 @@ export interface ProjectSummary {
   location?: string
   /** 桌面版：完整路径，放进 tooltip */
   locationPath?: string
+  /** 这部作品在文件夹里还是在程序内部存储里 */
+  kind?: 'folder' | 'internal'
 }
 
 export interface StorageAdapter {

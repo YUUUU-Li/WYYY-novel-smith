@@ -143,6 +143,8 @@ interface State {
 
   /** 打开一个已经存在的作品文件夹，登记进作品库并进入 */
   openWorkFolder: () => Promise<void>
+  /** 作品文件夹被改名/挪走之后，重新指过去（只更新记账，不搬文件） */
+  relocateWork: (id: string) => Promise<void>
   /** 轮询入口：指纹变了就去看内容，内容真变了才提示 */
   checkDisk: () => Promise<void>
   /** 接受磁盘版本：丢弃内存改动，重新加载 */
@@ -345,6 +347,22 @@ export const useStore = create<State>((set, get) => {
    * 所有作品，扫一遍就有列表。现在一个文件夹就是一部作品，没有可以扫的
    * 统一目录了，所以列表来自记账 + 内部存储两处。
    */
+  /**
+   * 同一部作品可能既在注册表里、又还留在内部存储里（早期版本写进浏览器
+   * 的那一份）。不按 id 去重的话作品库会出现两张同名卡片，而且其中一张
+   * 是旧副本 —— 打开它是看不到新改动的。文件夹版本的优先级更高。
+   */
+  const dedupe = (rows: ProjectSummary[]): ProjectSummary[] => {
+    const seen = new Set<string>()
+    const out: ProjectSummary[] = []
+    for (const r of rows) {
+      if (seen.has(r.id)) continue
+      seen.add(r.id)
+      out.push(r)
+    }
+    return out.sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
   const refreshSummaries = async (): Promise<ProjectSummary[]> => {
     const internal = await new LocalStorageAdapter().listProjects().catch(() => [])
     const folderWorks = loadWorks().filter((w) => w.kind === 'folder')
@@ -354,12 +372,13 @@ export const useStore = create<State>((set, get) => {
         title: w.title,
         updatedAt: w.updatedAt,
         entityCount: w.entityCount,
+        kind: 'folder' as const,
         location: w.folderName || w.path || '作品文件夹',
         locationPath: w.path,
       })),
-      ...internal.map((s) => ({ ...s, location: '程序内部存储' })),
+      ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
     ]
-    return rows.sort((a, b) => b.updatedAt - a.updatedAt)
+    return dedupe(rows)
   }
 
   return {
@@ -398,16 +417,18 @@ export const useStore = create<State>((set, get) => {
           updatedAt: w.updatedAt,
           entityCount: w.entityCount,
           // 位置是作品自己的属性，不是"当前打开的那本"
+          kind: 'folder' as const,
           location: w.folderName || w.path || '作品文件夹',
           locationPath: w.path,
         })),
-        ...internal.map((s) => ({ ...s, location: '程序内部存储' })),
-      ].sort((a, b) => b.updatedAt - a.updatedAt)
-
+        ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
+        ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
+      ]
+      const sorted = dedupe(summaries)
       set({
         novel: null,
         index: null,
-        summaries,
+        summaries: sorted,
         storageMode: 'localStorage',
         rootName: null,
         ready: true,
@@ -801,6 +822,65 @@ export const useStore = create<State>((set, get) => {
      * 备份、从网盘拷回来的东西，都是指一下这个文件夹就开始用。
      * 判据很简单：这一层里有 novel.json 才算作品。
      */
+    /**
+     * 重新指定某部作品的位置。
+     *
+     * 场景：你在资源管理器里把文件夹改了个名/挪到别的盘，程序按老路径
+     * 找不到它了。这时候**不要**重新导入、也不要复制 —— 直接指到它现在
+     * 待的地方，程序只更新记账，一个字节都不搬。
+     *
+     * 校验：新文件夹里的 novel.json 必须是同一部作品（id 相同）。id 不同
+     * 说明指错了文件夹，宁可拒绝也不要让人把两本书搞混。
+     */
+    relocateWork: async (id) => {
+      const ref = loadWorks().find((w) => w.id === id)
+      if (!ref) throw new Error('这部作品没有文件夹记录（它存在程序内部）。先「打开作品文件夹」把它落到磁盘上。')
+
+      let next: StorageAdapter | null = null
+      if (isTauri()) {
+        next = await pickLibraryFolder()
+      } else if (supportsFileSystem()) {
+        const handle = await window.showDirectoryPicker!({
+          id: 'novel-studio-relocate',
+          mode: 'readwrite',
+          startIn: 'documents',
+        })
+        next = FileStorage.wrap(handle)
+      } else {
+        throw new Error('这个浏览器不支持文件夹访问（Firefox / Safari 尚未实现）。')
+      }
+      if (!next) return
+
+      const found = await next.read(id).catch(() => null)
+      if (!found) {
+        throw new Error(
+          '这个文件夹里的作品和它不一致（novel.json 里的 id 对不上）。请选它现在所在的那个文件夹。',
+        )
+      }
+
+      const patch: Partial<{ folderName: string; title: string; updatedAt: number; entityCount: number }> = {
+        folderName: next.rootName ?? '',
+        title: found.project.title,
+        updatedAt: found.project.updatedAt ?? ref.updatedAt,
+        entityCount: found.entities.length,
+      }
+      if (next instanceof TauriStorage) {
+        upsertWork({ ...ref, ...patch, kind: 'folder', path: next.root, handleKey: undefined })
+        rememberRoot(next.root)
+      } else if (next instanceof FileStorage) {
+        const key = await stashHandle(id, next.handle)
+        upsertWork({ ...ref, ...patch, kind: 'folder', handleKey: key, path: undefined })
+      }
+
+      // 正在看这部作品的话，顺手把适配器也切过去，接着用不着再点一次
+      if (get().novel?.project.id === id) {
+        setStorage(next)
+        set({ storageMode: 'filesystem', rootName: next.rootName, diskChange: null })
+        await refreshBaseline(found)
+      }
+      set({ summaries: await refreshSummaries() })
+    },
+
     openWorkFolder: async () => {
       const editing = get().novel
       if (editing) await getStorage().write(editing).catch(() => undefined)

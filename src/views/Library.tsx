@@ -10,7 +10,7 @@
    ============================================================ */
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, Plus, Trash } from '@phosphor-icons/react'
+import { ArrowRight, FolderOpen, Plus, Trash } from '@phosphor-icons/react'
 import { useStore } from '../store/useNovel'
 import { ConfirmButton } from '../components/ui'
 import { StorageBar } from '../components/StorageBar'
@@ -18,8 +18,10 @@ import { StorageBar } from '../components/StorageBar'
 export function Library() {
   const summaries = useStore((s) => s.summaries)
   const openProject = useStore((s) => s.openProject)
+  const relocateWork = useStore((s) => s.relocateWork)
   const newProject = useStore((s) => s.newProject)
   const deleteProject = useStore((s) => s.deleteProject)
+  const [err, setErr] = useState<string | null>(null)
 
   const empty = summaries.length === 0
   const [creating, setCreating] = useState(empty)
@@ -177,7 +179,7 @@ export function Library() {
                       style={{ color: 'var(--color-ink-faint)', opacity: 0.8 }}
                       title={p.locationPath ?? p.location ?? '程序内部存储'}
                     >
-                      位置：{p.location ?? '程序内部存储'}
+                      位置：{p.locationPath ?? p.location ?? '程序内部存储'}{p.kind === 'internal' ? '（还没落到文件夹）' : ''}
                     </div>
                   </button>
 
@@ -190,6 +192,20 @@ export function Library() {
                     <ArrowRight size={12} />
                   </button>
 
+
+                  {p.kind === 'folder' && (
+                    <span className="flex-none opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <button
+                        type="button"
+                        className="btn btn-plain"
+                        title="文件夹被改名或挪走了？指到它现在的位置（不搬文件）"
+                        aria-label="重新指定位置"
+                        onClick={() => void relocateWork(p.id).catch((e) => setErr(e instanceof Error ? e.message : '操作失败'))}
+                      >
+                        <FolderOpen size={12} />
+                      </button>
+                    </span>
+                  )}
                   <span className="flex-none opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                     <ConfirmButton onConfirm={() => void deleteProject(p.id)}>
                       <Trash size={12} />
@@ -198,6 +214,12 @@ export function Library() {
                 </li>
               ))}
             </ul>
+
+            {err && (
+              <div className="mt-4 text-[11.5px]" style={{ color: 'var(--color-danger)' }} role="alert">
+                {err}
+              </div>
+            )}
 
             <div className="mt-10">
               <StorageBar />
