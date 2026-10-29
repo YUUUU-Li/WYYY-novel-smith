@@ -141,7 +141,7 @@ export function EntitiesView() {
             const f = addFolder('新词条夹', safeContainer)
             setContainer(f.id)
           }}
-          onNewEntity={() => addEntity(filter === 'all' ? 'character' : filter, undefined, safeContainer)}
+          onNewEntity={(type) => addEntity(type, undefined, safeContainer)}
           showBack
         />
         <div className="flex-1 min-h-0">
@@ -193,7 +193,7 @@ export function EntitiesView() {
           const f = addFolder('新词条夹', safeContainer)
           setContainer(f.id)
         }}
-        onNewEntity={() => addEntity(filter === 'all' ? 'character' : filter, undefined, safeContainer)}
+        onNewEntity={(type) => addEntity(type, undefined, safeContainer)}
       />
 
       {/* 面包屑。**必须常驻**，不能只在拖动时出现 ——
@@ -405,11 +405,18 @@ function ListHeader({
   setDense: (d: boolean) => void
   current?: { name: string }
   onNewFolder: () => void
-  onNewEntity: () => void
+  /** 新建条目。类型由调用方决定：「全部」视图会先让作者选，选中的类型一栏直接用当前类型 */
+  onNewEntity: (type: EntityType) => void
   onBack?: () => void
   showBack?: boolean
 }) {
   const total = entities.length
+
+  /* 「新建词条」的类型菜单。
+     以前这个按钮写死建角色，于是在「全部」视图下不管想建什么都得到「新角色」。
+     现在：已经筛到某个类型时一键直建该类型；在「全部」里则展开类型菜单。 */
+  const [newMenu, setNewMenu] = useState(false)
+  const quickType = filter === 'all' ? null : filter
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
@@ -499,10 +506,80 @@ function ListHeader({
           <FolderPlus size={13} />
           新建词条夹
         </button>
-        <button type="button" className="btn btn-ghost flex-none" onClick={onNewEntity}>
-          <Plus size={12} />
-          新建词条
-        </button>
+        {quickType ? (
+          /* 已经筛到某个类型：一键直建，不多问一句 */
+          <button
+            type="button"
+            className="btn btn-ghost flex-none"
+            onClick={() => onNewEntity(quickType)}
+            title={`在「${current ? current.name : '这一层'}」里新建一个${ENTITY_META[quickType].label}`}
+          >
+            <Plus size={12} />
+            新建{ENTITY_META[quickType].label}
+          </button>
+        ) : (
+          <div className="relative flex-none">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setNewMenu((v) => !v)}
+              title="先选类型，再新建条目"
+              aria-expanded={newMenu}
+              aria-haspopup="menu"
+            >
+              <Plus size={12} />
+              新建词条
+            </button>
+            {newMenu && (
+              <>
+                {/* 点面板外面任何地方都关掉。用透明全屏层而不是监听 document：
+                    这样不会在别处留下摘不掉的监听器。 */}
+                <div
+                  className="fixed inset-0 z-40"
+                  style={{ background: 'transparent' }}
+                  onMouseDown={() => setNewMenu(false)}
+                  aria-hidden
+                />
+                <div
+                  className="anim-fade-up absolute right-0 z-50 mt-1 flex w-44 flex-col p-1"
+                  role="menu"
+                  style={{
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-line-strong)',
+                    borderRadius: 'var(--radius-lg)',
+                    boxShadow: 'var(--shadow-float)',
+                    top: '100%',
+                  }}
+                >
+                  {ENTITY_TYPES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="menuitem"
+                      className="btn btn-plain w-full justify-start"
+                      onClick={() => {
+                        setNewMenu(false)
+                        onNewEntity(t)
+                      }}
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          display: 'block',
+                          width: 6,
+                          height: 6,
+                          flex: 'none',
+                          background: `var(${ENTITY_META[t].cssVar})`,
+                        }}
+                      />
+                      新建{ENTITY_META[t].label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {!showBack && (

@@ -38,19 +38,15 @@ pub fn run() {
             commands::export_text,
         ])
         .setup(|app| {
+            boot_diag();
             let (dir, fell_back) = pick_webview_dir(app.handle());
+            diag_line(&format!("界面缓存目录 = {}", dir.display()));
             if fell_back {
-                log_line(&format!(
-                    "上次的界面缓存目录被占，这次改用 {}",
-                    dir.display()
-                ));
-                note_to_author(
-                    "上次没有正常退出，界面缓存目录被残留进程占着。\n\n\
-                     这次已经自动换了一个新的缓存目录，程序照常可用。\n\
-                     你的稿子在小说库文件夹里，不受影响；\n\
-                     如果之前把稿子存在程序内部（没选过小说库文件夹），\n\
-                     重启电脑后再打开一次就能看到它。",
-                );
+                /* 2026-10-25：这里以前会弹一个「缓存目录被残留进程占着」的提示。
+                   实测这个进程是被系统以受限身份启动的：写不进中等完整性的
+                   AppData\Local（只有 LocalLow 写得进），所以它每次启动都必然
+                   要换目录 —— 于是每次开机都弹一次，纯噪音还吓人。改成只记日志。 */
+                log_line(&format!("界面缓存目录不可用，改用 {}", dir.display()));
             }
             cleanup_stale_dirs(&dir);
 
@@ -141,18 +137,122 @@ fn base_dir(app: &tauri::AppHandle) -> PathBuf {
 }
 
 /// 返回（要用的目录，是不是退而求其次）
+///
+/// 为什么要自己验一遍「这个目录真的能写」：
+/// Tauri 在建窗口时（`tauri-2.x/src/manager/webview.rs`）只做
+/// `if !user_data_dir.exists() { create_dir_all(user_data_dir)? }`，
+/// 失败时抛出来的就是一句「拒绝访问。 (os error 5)」—— 不说哪个路径、
+/// 不说哪一步、也不知道下一个候选还能用。2026-10-25 那次 0xC0000409
+/// 正是卡在这里，白查了一整天。
+/// 现在每个候选目录都真写一个探针文件，不行就换下一个；全不行才交给
+/// Tauri 去报错，而且每一步的 errno 都已经进了诊断日志。
 fn pick_webview_dir(app: &tauri::AppHandle) -> (PathBuf, bool) {
     let base = base_dir(app);
-    let _ = std::fs::create_dir_all(&base);
-    let stable = base.join("EBWebView");
-    if dir_is_free(&stable) {
-        return (stable, false);
+    diag_line(&format!("base = {}", base.display()));
+
+    // 0) 环境变量强制指定 —— 应急开关，绕过一切猜测
+    if let Ok(v) = std::env::var("WUYOU_WEBVIEW_DIR") {
+        let t = v.trim();
+        if !t.is_empty() {
+            let p = PathBuf::from(t);
+            match can_write_dir(&p) {
+                Ok(()) => {
+                    diag_line(&format!("WUYOU_WEBVIEW_DIR 可用: {}", p.display()));
+                    return (p, false);
+                }
+                Err(e) => diag_line(&format!("WUYOU_WEBVIEW_DIR 不可用: {} -> {e}", p.display())),
+            }
+        }
     }
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    (base.join(format!("EBWebView-{stamp}")), true)
+
+    let stable = base.join("EBWebView");
+    let free = dir_is_free(&stable);
+    diag_line(&format!(
+        "stable = {}  (exists = {}, 可改名 = {})",
+        stable.display(),
+        stable.exists(),
+        free
+    ));
+    if free {
+        match can_write_dir(&stable) {
+            Ok(()) => return (stable, false),
+            Err(e) => diag_line(&format!("stable 不可写: {e}")),
+        }
+    }
+
+    // 1) 同目录下换一个新的 → 2) 系统临时目录 → 3) LocalLow（被降权的进程
+    //    唯一还写得进去的地方，所以它既是兜底也是"我是不是被降权了"的探针）
+    for cand in [
+        base.join(format!("EBWebView-{}", now_secs())),
+        std::env::temp_dir().join("novel-studio-webview"),
+        locallow_temp().join("novel-studio-webview"),
+    ] {
+        match can_write_dir(&cand) {
+            Ok(()) => {
+                diag_line(&format!("改用一个能写的缓存目录: {}", cand.display()));
+                return (cand, true);
+            }
+            Err(e) => diag_line(&format!("候选目录不可写: {} -> {e}", cand.display())),
+        }
+    }
+
+    diag_line("所有候选缓存目录都不可写，交给 Tauri 报错（错因见上面的 errno）");
+    (stable, true)
+}
+
+/// `%LOCALAPPDATA%\..\LocalLow\Temp`。
+/// 低完整性（Low IL）进程只有这里和它自己的容器还能写，
+/// 所以这个路径能不能写，本身就是一条诊断信息。
+fn locallow_temp() -> PathBuf {
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
+    let p = PathBuf::from(local);
+    match p.parent() {
+        Some(appdata) => appdata.join("LocalLow").join("Temp"),
+        None => PathBuf::from("."),
+    }
+}
+
+/// 真写一个探针文件来确认目录可用；失败时连 errno 一起带回来。
+fn can_write_dir(dir: &Path) -> Result<(), String> {
+    use std::io::Write;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("create_dir_all {e} (raw={:?})", e.raw_os_error()))?;
+    let probe = dir.join(".wuyou-write-test");
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&probe)
+            .map_err(|e| format!("create {e} (raw={:?})", e.raw_os_error()))?;
+        f.write_all(b"ok")
+            .map_err(|e| format!("write {e} (raw={:?})", e.raw_os_error()))?;
+    }
+    let _ = std::fs::remove_file(&probe);
+    Ok(())
+}
+
+/// 启动时的环境自检：把「程序眼里的世界」原样记下来。
+fn boot_diag() {
+    diag_line("=== 启动 ===");
+    if let Ok(exe) = std::env::current_exe() {
+        diag_line(&format!("exe = {}", exe.display()));
+    }
+    for key in ["USERPROFILE", "LOCALAPPDATA", "TEMP", "TMP", "USERNAME"] {
+        diag_line(&format!("{key} = {:?}", std::env::var(key).ok()));
+    }
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let probes: [(&str, PathBuf); 3] = [
+        ("LOCALAPPDATA", PathBuf::from(&local)),
+        ("TEMP", std::env::temp_dir()),
+        ("LocalLow\\Temp", locallow_temp()),
+    ];
+    for (label, dir) in probes {
+        match can_write_dir(&dir) {
+            Ok(()) => diag_line(&format!("写测试 {label} = OK  ({})", dir.display())),
+            Err(e) => diag_line(&format!("写测试 {label} = 失败 {e}")),
+        }
+    }
 }
 
 /// 顺手清掉以前留下的临时目录（只清没被占的，占着的留给重启）
@@ -266,24 +366,82 @@ fn log_file() -> Option<PathBuf> {
     Some(dir.join("crash.log"))
 }
 
-fn log_line(text: &str) {
-    if let Some(path) = log_file() {
-        use std::io::Write;
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-        {
-            let _ = writeln!(f, "[{stamp}] {text}");
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 诊断日志的落点候选。
+/// 2026-10-25 实测：这个进程连 `%TEMP%` 都写不进去（更别说 LOCALAPPDATA），
+/// 以前只往 `%TEMP%` 写 —— 结果日志全丢，白查一整天。exe 旁边和 LocalLow
+/// 一定写得进，所以按「临时目录 → exe 目录 → LocalLow」依次试。
+fn diag_log_candidates() -> Vec<PathBuf> {
+    let mut v = vec![std::env::temp_dir().join("novel-studio-diag.log")];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            v.push(dir.join("novel-studio-diag.log"));
+        }
+    }
+    v.push(locallow_temp().join("novel-studio-diag.log"));
+    v
+}
+
+/// 往第一个写得进的候选里追加一行。
+fn diag_write(line: &str) {
+    for p in diag_log_candidates() {
+        if append_line(&p, line) {
+            return;
         }
     }
 }
 
+/// 追加一行，返回到底写进去了没有。
+fn append_line(path: &Path, line: &str) -> bool {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        Ok(mut f) => writeln!(f, "{line}").is_ok(),
+        Err(_) => false,
+    }
+}
+
+/// 崩溃、退出这类事件：优先写 crash.log，写不进去就退到临时目录。
+/// 以前这里是 `if let Ok(..) { .. }` 静默吞错 —— 结果程序在最需要日志的
+/// 那一刻，一行都没留下（2026-10-25 那次四条崩溃，crash.log 纹丝不动）。
+fn log_line(text: &str) {
+    let line = format!("[{}] {text}", now_secs());
+    let mut wrote = false;
+    if let Some(path) = log_file() {
+        wrote = append_line(&path, &line);
+    }
+    if !wrote {
+        diag_write(&line);
+    }
+}
+
+/// 诊断行：crash.log 和诊断日志各写一遍。
+/// 两处都写是刻意的 —— 「写不进去」本身就是要诊断的症状。
+fn diag_line(text: &str) {
+    let line = format!("[{}] {text}", now_secs());
+    eprintln!("{line}");
+    if let Some(path) = log_file() {
+        let _ = append_line(&path, &line);
+    }
+    diag_write(&line);
+}
+
 /// 有一条要作者知道的事，但又不想用"启动失败"的口气去吓人。
+/// 2026-10-25：目前没有调用点（原来那条「缓存目录被占」的提示改成写日志了），
+/// 保留是因为它是唯一「温和提示」的入口，以后要弹东西还用它。
+#[allow(dead_code)]
 fn note_to_author(text: &str) {
     if std::env::var("WUYOU_NO_DIALOG").ok().as_deref() == Some("1") {
         return;
@@ -299,7 +457,14 @@ fn startup_failed(detail: &str) {
     } else {
         "启动失败。把下面这段发给开发者就能定位。"
     };
-    let msg = format!("{hint}\n\n—— 原始错误 ——\n{detail}");
+    // 把日志的位置也印在弹框里：崩溃现场最缺的就是"日志在哪"。
+    // 只列候选、不写实际落点，因为这一刻很可能连日志都写不进去。
+    let logs = diag_log_candidates()
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let msg = format!("{hint}\n\n—— 原始错误 ——\n{detail}\n\n—— 诊断日志 ——\n{logs}");
     eprintln!("{msg}");
     show_message("吾又一言 启动失败", &msg);
 }

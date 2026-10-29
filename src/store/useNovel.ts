@@ -360,6 +360,19 @@ export const useStore = create<State>((set, get) => {
     const result = await runSave(
       () => store.write(n),
       async () => {
+        /* 存好之后，把这本作品的「更新时间 / 条目数」写回注册表。
+           作品库卡片上的「N 条 · 几天前」读的是这份注册表，不写回的话它会
+           永远停在「打开这部作品的那一刻」—— 作者刚写完一大段，回作品库
+           还显示三天前，只会以为没存上。 */
+        const ref = loadWorks().find((w) => w.id === n.project.id)
+        if (ref) {
+          upsertWork({
+            ...ref,
+            title: n.project.title,
+            updatedAt: n.project.updatedAt ?? Date.now(),
+            entityCount: n.entities.length,
+          })
+        }
         // 先更新基线再列项目：基线必须在磁盘状态稳定之后取
         await refreshBaseline(n)
         set({ summaries: await refreshSummaries() })
