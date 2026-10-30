@@ -726,6 +726,92 @@ export function CanvasGraph() {
               overflow: 'visible',
             }}
           >
+            {/* 方格两侧的光。
+                界面上其他东西的凸起/凹陷是一句 box-shadow，可 SVG 的
+                <rect> 不认 box-shadow —— 只能用滤镜自己合成：把图形的
+                alpha 偏一下、模糊、染色得到影子，再把原图形叠在上面。
+                三档：
+                  raised 默认凸起（影子落在右下，高光落在左上）
+                  hover  影子收小一档（手指靠近，把光挡掉一块）
+                  sunk   凹下去（影子打到内侧左上，用「原图减去偏移后的
+                         自己」取到那条月牙，再裁回图形里）
+                颜色是纸色推出来的，和 --nm-hi / --nm-lo 同源：
+                以后动那两个 token，这里的 #fbfdf3 和 0.16 也要一起改。 */}
+            <defs>
+              <filter
+                id="ns-nm-raised"
+                x="-25%"
+                y="-25%"
+                width="150%"
+                height="150%"
+                colorInterpolationFilters="sRGB"
+              >
+                <feOffset in="SourceAlpha" dx="1.6" dy="1.6" result="lo-off" />
+                <feGaussianBlur in="lo-off" stdDeviation="2.4" result="lo-blur" />
+                <feFlood floodColor="#26221a" floodOpacity="0.16" result="lo-color" />
+                <feComposite in="lo-color" in2="lo-blur" operator="in" result="lo-shadow" />
+                <feOffset in="SourceAlpha" dx="-1.6" dy="-1.6" result="hi-off" />
+                <feGaussianBlur in="hi-off" stdDeviation="1.6" result="hi-blur" />
+                <feFlood floodColor="#fbfdf3" floodOpacity="0.95" result="hi-color" />
+                <feComposite in="hi-color" in2="hi-blur" operator="in" result="hi-shadow" />
+                <feMerge>
+                  <feMergeNode in="lo-shadow" />
+                  <feMergeNode in="hi-shadow" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+
+              <filter
+                id="ns-nm-hover"
+                x="-25%"
+                y="-25%"
+                width="150%"
+                height="150%"
+                colorInterpolationFilters="sRGB"
+              >
+                <feOffset in="SourceAlpha" dx="1" dy="1" result="lo-off" />
+                <feGaussianBlur in="lo-off" stdDeviation="1.6" result="lo-blur" />
+                <feFlood floodColor="#26221a" floodOpacity="0.16" result="lo-color" />
+                <feComposite in="lo-color" in2="lo-blur" operator="in" result="lo-shadow" />
+                <feOffset in="SourceAlpha" dx="-1" dy="-1" result="hi-off" />
+                <feGaussianBlur in="hi-off" stdDeviation="1.1" result="hi-blur" />
+                <feFlood floodColor="#fbfdf3" floodOpacity="0.95" result="hi-color" />
+                <feComposite in="hi-color" in2="hi-blur" operator="in" result="hi-shadow" />
+                <feMerge>
+                  <feMergeNode in="lo-shadow" />
+                  <feMergeNode in="hi-shadow" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+
+              <filter
+                id="ns-nm-sunk"
+                x="-25%"
+                y="-25%"
+                width="150%"
+                height="150%"
+                colorInterpolationFilters="sRGB"
+              >
+                <feOffset in="SourceAlpha" dx="1.6" dy="1.6" result="in-off" />
+                <feComposite in="SourceAlpha" in2="in-off" operator="out" result="in-cut" />
+                <feGaussianBlur in="in-cut" stdDeviation="2" result="in-blur" />
+                <feFlood floodColor="#26221a" floodOpacity="0.24" result="in-color" />
+                <feComposite in="in-color" in2="in-blur" operator="in" result="in-dark" />
+                <feComposite in="in-dark" in2="SourceAlpha" operator="in" result="in-inner" />
+                <feOffset in="SourceAlpha" dx="-1.6" dy="-1.6" result="hi-off" />
+                <feComposite in="SourceAlpha" in2="hi-off" operator="out" result="hi-cut" />
+                <feGaussianBlur in="hi-cut" stdDeviation="1.6" result="hi-blur" />
+                <feFlood floodColor="#fbfdf3" floodOpacity="0.9" result="hi-color" />
+                <feComposite in="hi-color" in2="hi-blur" operator="in" result="hi-light" />
+                <feComposite in="hi-light" in2="SourceAlpha" operator="in" result="hi-inner" />
+                <feMerge>
+                  <feMergeNode in="SourceGraphic" />
+                  <feMergeNode in="in-inner" />
+                  <feMergeNode in="hi-inner" />
+                </feMerge>
+              </filter>
+            </defs>
+
             {/* 连线画在方格下面 */}
             {graph.edges.map((e) => {
               const color = edgeColorVar(e.type, e.color)
@@ -922,6 +1008,11 @@ export function CanvasGraph() {
               /* 删除模式 + 鼠标压在这个方格上：整个方格泛一层淡红，
                  告诉你「点下去删的就是这一个」。 */
               const doomed = danger && hoverNode === n.id
+              /* 被选中、或正拿它当连线起点的方格是「按下去」的：
+                 这两种状态下它不是等着被点的纸片，是已经拿在手里、
+                 或者已经开了口的东西，所以凹下去。 */
+              const sunk = active || isFrom
+              const hovering = hoverNode === n.id
               return (
                 <g
                   key={n.id}
@@ -935,9 +1026,7 @@ export function CanvasGraph() {
                           ? 'crosshair'
                           : 'pointer',
                   }}
-                  onPointerEnter={() => {
-                    if (danger) setHoverNode(n.id)
-                  }}
+                  onPointerEnter={() => setHoverNode(n.id)}
                   onPointerLeave={() => setHoverNode((x) => (x === n.id ? null : x))}
                   onPointerDown={(e) => onNodePointerDown(e, n)}
                   onClick={() => onNodeActivate(n)}
@@ -949,12 +1038,28 @@ export function CanvasGraph() {
                       <rect width={NODE_W} height={NODE_H} rx={10} />
                     </clipPath>
                   </defs>
+                  {/* 受光的那一面。必须放在裁剪组外面 —— 裁剪组会把滤镜
+                      打出来的阴影一起裁掉，那凸起就只剩贴纸边了。
+                      rx 交给它自己画，裁剪组只剩下「给左边色带切圆角」
+                      这一件事。
+
+                      滤镜走属性而不是类：外链样式表里的 filter: url(#id)
+                      按样式表自己的地址解析片段，找不到这里的 #ns-nm-*，
+                      会被静默忽略；写在属性上才按文档地址解析。 */}
+                  <rect
+                    filter={
+                      sunk
+                        ? 'url(#ns-nm-sunk)'
+                        : hovering
+                          ? 'url(#ns-nm-hover)'
+                          : 'url(#ns-nm-raised)'
+                    }
+                    width={NODE_W}
+                    height={NODE_H}
+                    rx={10}
+                    fill={doomed ? 'var(--color-danger-wash)' : 'var(--color-surface)'}
+                  />
                   <g clipPath={`url(#nsr-${n.id})`}>
-                    <rect
-                      width={NODE_W}
-                      height={NODE_H}
-                      fill={doomed ? 'var(--color-danger-wash)' : 'var(--color-surface)'}
-                    />
                     {/* 左边这条类型色带。删除模式下也换成朱砂 ——
                         不然一格里两种颜色，「整个方格都要没了」就说不圆。 */}
                     <rect

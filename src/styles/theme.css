@@ -100,6 +100,39 @@
 }
 
 /* ============================================================
+   新拟物的手感（Neumorphism / Soft UI）
+
+   光只从左上打来，一束，方向锁死，任何地方都不许反过来：
+     · 亮面在左上（负 X、负 Y）—— 被照亮的那一侧
+     · 暗面在右下（正 X、正 Y）—— 光线被元件挡住投下的影子
+
+   两条与常见 UI 相反的规矩，这里也照做，因为那才是这套语言的关键：
+     1. 鼠标靠近 = 手指靠近光源 → 阴影**变小**，不是变大。
+     2. 按下 = 元件压进纸面 → 从凸起翻成**内凹**，而且**不走位移**。
+
+   颜色不取那套冷灰（#e0e5ec / #b8bcc2）：那是塑料色，铺到这张米黄纸上
+   会像贴了个零件。这里全部从纸色推导 —— 亮面比纸再提一档，暗面压一档。
+
+   偏移量也比参考值小（不是 8/16px，而是 2/5px）：这是密集的编辑工具，
+   阴影一大，行与行之间就糊了，反而看不清字。
+   ============================================================ */
+
+:root {
+  --nm-hi: #fbfdf3; /* 左上高光（纸色提亮一档） */
+  --nm-lo: rgba(38, 34, 26, 0.16); /* 右下投影（墨色淡化） */
+
+  /* 凸起：默认态、卡片 */
+  --nm-raised: -2px -2px 5px var(--nm-hi), 2px 2px 5px var(--nm-lo);
+  /* 悬停：阴影收缩（手指靠近遮光） */
+  --nm-hover: -1px -1px 3px var(--nm-hi), 1px 1px 3px var(--nm-lo);
+  /* 内凹：按下、输入框槽 */
+  --nm-inset: inset 2px 2px 5px var(--nm-lo), inset -2px -2px 5px var(--nm-hi);
+  /* 浅内凹：输入框聚焦（通道打开，不是加压） */
+  --nm-inset-shallow: inset 1px 1px 2px rgba(38, 34, 26, 0.09),
+    inset -1px -1px 2px var(--nm-hi);
+}
+
+/* ============================================================
    基础层
    ============================================================ */
 
@@ -225,15 +258,31 @@ body {
   white-space: nowrap;
   cursor: pointer;
   border: 1px solid transparent;
+  /* 默认凸起：按钮是从纸面上「挤」出来的一块，不是一个方块贴上去 */
+  box-shadow: var(--nm-raised);
   transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
+    background-color 0.2s var(--ease-in-out-soft),
+    border-color 0.2s var(--ease-in-out-soft),
+    color 0.2s var(--ease-in-out-soft),
+    box-shadow 0.2s var(--ease-in-out-soft);
+}
+
+/* 悬停：阴影收缩一档 —— 手指压近了，遮住的光更多。
+   注意方向：**变小**，不是变大。变大在物理上是错的。 */
+.btn:hover:not(:disabled) {
+  box-shadow: var(--nm-hover);
+}
+
+/* 按下：翻成内凹，且不做任何位移。
+   元件长在纸面上，按下去是陷进去，不是飘起来又落回去。 */
+.btn:active:not(:disabled) {
+  box-shadow: var(--nm-inset);
 }
 
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* 主按钮：朱砂底 + 纸色字，对比度 > 7:1 */
@@ -244,8 +293,11 @@ body {
 .btn-primary:hover:not(:disabled) {
   background: var(--color-accent-bright);
 }
+/* 按下：底色压深一档接管「陷下去」这件事，背景配合凹陷阴影。
+   原来这里是 translateY(1px)，但位移会让整排按钮跟着抖一下 ——
+   新拟物里元件贴死在表面上，凹陷比位移更实、也更安静。 */
 .btn-primary:active:not(:disabled) {
-  transform: translateY(1px);
+  background: var(--color-accent-deep);
 }
 
 /* 次按钮：透明底 + 墨色描边。悬停转朱砂，不填墨 —— 填墨会变成一块黑 */
@@ -259,18 +311,23 @@ body {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
-.btn-ghost:active:not(:disabled) {
-  transform: translateY(1px);
-}
+/* 次按钮的按下也一样：只靠 .btn:active 的内凹，不加位移 ——
+   一排按钮里只有一个动，眼睛会跟着跳。 */
 
-/* 纯文字按钮 */
+/* 纯文字按钮：不参与立体语汇。
+   给它阴影会变成「一块有字的凸包」，而它本来就该像正文里的一句话。 */
 .btn-plain {
   background: transparent;
   color: var(--color-ink-soft);
   padding: 6px 8px;
+  box-shadow: none;
 }
 .btn-plain:hover:not(:disabled) {
   color: var(--color-accent);
+  box-shadow: none;
+}
+.btn-plain:active:not(:disabled) {
+  box-shadow: none;
 }
 
 /* --- 导航标签 ---
@@ -294,11 +351,20 @@ body {
   white-space: nowrap;
   color: var(--color-ink-soft);
   cursor: pointer;
-  transition: color 0.2s ease;
+  border-radius: var(--radius-md);
+  transition:
+    color 0.2s var(--ease-in-out-soft),
+    box-shadow 0.2s var(--ease-in-out-soft);
 }
 
 .nav-tab:hover {
   color: var(--color-accent);
+}
+
+/* 按下的那一下给它一个浅坑：手感的反馈要落在按下的瞬间，
+   而不是等页面切过去之后才在别处补一个动画。 */
+.nav-tab:active {
+  box-shadow: var(--nm-inset-shallow);
 }
 
 /* 选中：字转朱砂，底部一条 2px 朱砂线 */
@@ -342,11 +408,18 @@ body {
   white-space: nowrap;
   color: var(--color-ink-soft);
   cursor: pointer;
-  transition: color 0.2s ease;
+  border-radius: var(--radius-sm);
+  transition:
+    color 0.2s var(--ease-in-out-soft),
+    box-shadow 0.2s var(--ease-in-out-soft);
 }
 
 .tool-tab:hover {
   color: var(--color-accent);
+}
+
+.tool-tab:active {
+  box-shadow: var(--nm-inset-shallow);
 }
 
 .tool-tab[aria-pressed='true'] {
@@ -375,22 +448,42 @@ body {
 .ns-card {
   background: var(--color-surface);
   border-color: var(--color-line);
+  /* 词条是纸面上凸起的一块薄片：能拿、能拖 */
+  box-shadow: var(--nm-raised);
+  transition:
+    background-color 0.2s var(--ease-in-out-soft),
+    border-color 0.2s var(--ease-in-out-soft),
+    box-shadow 0.2s var(--ease-in-out-soft);
 }
 
+/* 词条夹是「槽」，不是「片」：它是往里装东西的，所以天生内凹。
+   这条区分很重要 —— 凸起和凹陷在本语言里是两种意思，不能混用。 */
 .ns-card[data-folder='true'] {
   background: var(--color-surface-2);
+  box-shadow: var(--nm-inset-shallow);
 }
 
 .ns-card:hover {
   background: var(--color-hover);
   border-color: var(--color-accent);
+  box-shadow: var(--nm-hover);
 }
 
-/* 放在 :hover 之后 —— 拖到夹子上的高亮不能被悬停盖掉 */
+/* 放在 :hover 之后 —— 拖到夹子上的高亮不能被悬停盖掉。
+   这时候再压深一档内凹：东西已经落到槽里了。 */
 .ns-card[data-into='true'] {
   background: var(--color-accent-soft);
   border-color: var(--color-accent);
+  box-shadow: var(--nm-inset);
 }
+
+/* --- 关系网里的方格 ---
+   画布上的词条是 SVG 的 <rect>，box-shadow 对它不起作用，那层光只能靠
+   SVG 滤镜（CanvasGraph.tsx 里定义的 ns-nm-raised/hover/sunk）来打。
+   这里没写规则是有原因的：外链样式表里的 filter: url(#id) 是按**样式表
+   自己的地址**去解析片段的，解析不到 #id，滤镜会被静默忽略。所以选哪个
+   滤镜是写在 rect 的 filter 属性上的（按文档地址解析，才找得到）。
+   光照语言仍然统一：凸起=能拿，凹陷=已经按住/正在装东西。 */
 
 /* --- 紧凑表格：每行做成一块圆角小条 ---
    表格本来是一排通栏的横线，和圆角语言不搭。
@@ -483,7 +576,11 @@ body {
   font-size: 13.5px;
   font-family: inherit;
   color: var(--color-ink);
-  transition: border-color 0.2s ease;
+  /* 输入框是纸面上压出来的一道槽：默认就是凹的 */
+  box-shadow: var(--nm-inset);
+  transition:
+    border-color 0.2s var(--ease-in-out-soft),
+    box-shadow 0.2s var(--ease-in-out-soft);
 }
 .input::placeholder {
   color: var(--color-ink-faint);
@@ -492,9 +589,12 @@ body {
 .input:hover {
   border-color: rgba(156, 63, 48, 0.45);
 }
+/* 聚焦时槽**变浅**，不是变深：
+   手指按住了，通道打开，光能进来一点。加深会读成「上锁/警告」。 */
 .input:focus {
   outline: none;
   border-color: var(--color-accent);
+  box-shadow: var(--nm-inset-shallow);
 }
 
 /* --- 徽标 / 标签：直角纸签 --- */
