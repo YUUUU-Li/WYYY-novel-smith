@@ -15,6 +15,13 @@ default-run = "novel-studio"
 name = "novel_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# 发布版开关：没有它，`cargo build --release` 编出来的是「调试版」二进制 ——
+# 前端资源（dist/）不会被打进 exe，窗口打开是空白，只弹「dist/index.html 不存在」。
+# 体积也是判据：带它 ≈ 4.8 MB，不带 ≈ 3.4 MB。
+# 编发布版请用 `npm run desktop:release`（已固定带上这个 feature）。
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

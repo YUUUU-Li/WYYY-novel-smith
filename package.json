@@ -38,6 +38,7 @@
     "test:undo": "rolldown scripts/undo-stack-test.ts --format esm --platform node --file .undo-bundle.mjs && node .undo-bundle.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
+    "desktop:release": "npm run build && cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol",
     "desktop:test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "check": "npm run typecheck && npm test"
   },
