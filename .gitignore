@@ -68,3 +68,10 @@ data/
 .diag-stderr.txt
 .probe-out.txt
 .probe-err.txt
+
+# 发行包与内部规划文档：仓库里只放源码，安装包一律走 GitHub Releases。
+# （以下几项是 2026-10-30 从版本库里移出来的，本地文件仍在，只是不再被跟踪。）
+/*.zip
+/吾又一言 v0.1.1 待上传/*.zip
+/吾又一言 v0.1.1 待上传/*.exe
+/吾又一言-A档桌面化改造计划.md
