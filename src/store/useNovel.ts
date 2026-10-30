@@ -408,19 +408,41 @@ export const useStore = create<State>((set, get) => {
   const refreshSummaries = async (): Promise<ProjectSummary[]> => {
     const internal = await new LocalStorageAdapter().listProjects().catch(() => [])
     const folderWorks = loadWorks().filter((w) => w.kind === 'folder')
-    const rows: ProjectSummary[] = [
-      ...folderWorks.map((w) => ({
+    const rows: ProjectSummary[] = []
+
+    for (const w of folderWorks) {
+      /* 注册表只是缓存，真相在磁盘上：novel.json 里的 updatedAt、以及
+         角色/地点/事件/… 下 .md 的个数。以前这里直接读注册表，而注册表只在
+         「打开 / 新建 / 导入」那几种动作时才会写，于是作者昨天写完、今天一
+         打开作品库还显示「5 天前」—— 卡片上的「N 条 · 几天前」不是没刷新，
+         是从来没人去对过一次盘。列作品库最多就是几个目录的扫描，成本可以忽略，
+         每次列都顺手对一遍最省心。 */
+      let updatedAt = w.updatedAt
+      let entityCount = w.entityCount
+      if (isTauri() && w.path) {
+        const fresh = await new TauriStorage(w.path).listProjects().catch(() => [])
+        const hit = fresh[0]
+        if (hit) {
+          if (hit.updatedAt) updatedAt = hit.updatedAt
+          entityCount = hit.entityCount
+          if (hit.updatedAt !== w.updatedAt || hit.entityCount !== w.entityCount) {
+            upsertWork({ ...w, updatedAt, entityCount })
+          }
+        }
+      }
+      rows.push({
         id: w.id,
         title: w.title,
-        updatedAt: w.updatedAt,
-        entityCount: w.entityCount,
+        updatedAt,
+        entityCount,
         kind: 'folder' as const,
         location: w.folderName || w.path || '作品文件夹',
         locationPath: w.path,
         locationLabel: w.label,
-      })),
-      ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
-    ]
+      })
+    }
+
+    rows.push(...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })))
     return dedupe(rows)
   }
 
@@ -454,24 +476,13 @@ export const useStore = create<State>((set, get) => {
       /* 一进来永远是作品库。
          现在没有"小说库根目录"这个概念了：一个文件夹就是一部作品，
          列表来自两处 —— 内部存储里的作品（还没选文件夹时用的），
-         以及注册表里记着的那几个作品文件夹。 */
-      const internal = await new LocalStorageAdapter().listProjects().catch(() => [])
-      const folderWorks = loadWorks().filter((w) => w.kind === 'folder')
-      const summaries: ProjectSummary[] = [
-        ...folderWorks.map((w) => ({
-          id: w.id,
-          title: w.title,
-          updatedAt: w.updatedAt,
-          entityCount: w.entityCount,
-          // 位置是作品自己的属性，不是"当前打开的那本"
-          kind: 'folder' as const,
-          location: w.folderName || w.path || '作品文件夹',
-          locationPath: w.path,
-          locationLabel: w.label,
-        })),
-        ...internal.map((s) => ({ ...s, kind: 'internal' as const, location: '程序内部存储' })),
-      ]
-      const sorted = dedupe(summaries)
+         以及注册表里记着的那几个作品文件夹。
+
+         这里必须走 refreshSummaries()，不能就地拼一遍。以前就是就地拼的，
+         用的全是注册表里的缓存值，于是「一打开作品库」看到的永远是上次的
+         旧数字（作者明明昨天写过，卡片却还写着几天前）。refreshSummaries
+         会顺手对一遍盘。 */
+      const sorted = await refreshSummaries()
       set({
         novel: null,
         index: null,
@@ -1092,7 +1103,9 @@ export const useStore = create<State>((set, get) => {
         index: adopted.index,
         saveState: { kind: 'saved', at: Date.now() },
         selectedId: keepSelection,
-        summaries: await store.listProjects(),
+        /* 列表要按"所有作品"重算，不能拿当前这一本的 adapter.listProjects()：
+           桌面版每本作品各自一个根目录，那样只会得到一张卡片。 */
+        summaries: await refreshSummaries(),
       })
       await refreshBaseline(fromDisk)
       if (adopted.migratedTerms) scheduleSave()
@@ -1105,7 +1118,7 @@ export const useStore = create<State>((set, get) => {
       // 立刻写回，不走去抖：用户已经明确表态了
       await store.write(novel).catch(() => undefined)
       await refreshBaseline(novel)
-      set({ diskChange: null, summaries: await store.listProjects() })
+      set({ diskChange: null, summaries: await refreshSummaries() })
     },
 
     dismissDiskChange: () => {
